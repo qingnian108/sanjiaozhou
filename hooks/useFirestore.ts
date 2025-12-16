@@ -26,12 +26,15 @@ export function useFirestore(tenantId: string | null) {
 
   // 加载数据的函数 - 按 tenantId 过滤
   const loadData = async () => {
+    console.log('loadData called, tenantId:', tenantId);
     if (!tenantId) {
+      console.log('No tenantId, skipping load');
       setLoading(false);
       return;
     }
     
     try {
+      console.log('Starting data fetch...');
       const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes] = await Promise.all([
         db.collection('purchases').where({ tenantId }).get(),
         db.collection('orders').where({ tenantId }).get(),
@@ -41,6 +44,7 @@ export function useFirestore(tenantId: string | null) {
         db.collection('cloudMachines').where({ tenantId }).get(),
         db.collection('cloudWindows').where({ tenantId }).get()
       ]);
+      console.log('Data fetch complete');
 
       setPurchases(purchasesRes.data.map((d: any) => ({ id: d._id, ...d })));
       setOrders(ordersRes.data.map((d: any) => ({ id: d._id, ...d })));
@@ -52,10 +56,12 @@ export function useFirestore(tenantId: string | null) {
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings(settingsRes.data[0] as Settings);
       }
+      console.log('State updated');
     } catch (error) {
       console.error('Load data failed:', error);
     }
     setLoading(false);
+    console.log('Loading set to false');
   };
 
   useEffect(() => {
