@@ -12,8 +12,11 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const VALID_INVITE_CODE = '13051818686';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +27,11 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin }) => {
       if (mode === 'adminRegister') {
         if (!name) {
           setError('请输入姓名');
+          setLoading(false);
+          return;
+        }
+        if (inviteCode !== VALID_INVITE_CODE) {
+          setError('邀请码错误');
           setLoading(false);
           return;
         }
@@ -42,6 +50,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin }) => {
     setUsername('');
     setPassword('');
     setName('');
+    setInviteCode('');
     setError('');
   };
 
@@ -102,6 +111,17 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin }) => {
             placeholder="输入密码"
             required
           />
+
+          {mode === 'adminRegister' && (
+            <CyberInput
+              label="邀请码"
+              type="text"
+              value={inviteCode}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInviteCode(e.target.value)}
+              placeholder="输入邀请码"
+              required
+            />
+          )}
 
           {error && (
             <div className="text-red-500 text-sm font-mono bg-red-500/10 border border-red-500/30 p-2">

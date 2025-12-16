@@ -14,6 +14,7 @@ interface StaffManagerProps {
 }
 
 export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, onAddStaff, onDeleteStaff, onDeleteOrder }) => {
+  console.log('StaffManager received staffList:', staffList);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffUsername, setNewStaffUsername] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
@@ -47,7 +48,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
     }
   };
 
-  const staffStats = useMemo(() => calculateStaffStats(orders, staffList, settings), [orders, staffList, settings]);
+  // 只显示普通员工，不显示管理员
+  const nonAdminStaffList = staffList.filter(s => s.role !== 'admin');
+  const staffStats = useMemo(() => calculateStaffStats(orders, nonAdminStaffList, settings), [orders, nonAdminStaffList, settings]);
 
   const filteredStats = staffStats.filter(s => s.staff.name.toLowerCase().includes(filterName.toLowerCase()));
 
@@ -86,7 +89,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             onChange={(e: any) => setNewStaffPassword(e.target.value)} 
           />
           <div className="mb-4">
-            <NeonButton onClick={() => handleAdd({ preventDefault: () => {} } as React.FormEvent)}>
+            <NeonButton type="submit">
               <span className="flex items-center gap-2">
                 {loading ? '创建中...' : <><UserPlus size={16} /> 创建账号</>}
               </span>

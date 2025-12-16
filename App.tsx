@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Send, Database, BarChart3, Settings as SettingsIcon, Hexagon, Users, CloudUpload, MessageSquare, Monitor, LogOut } from 'lucide-react';
+import { LayoutDashboard, Send, Database, BarChart3, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
 import { useAuth } from './hooks/useAuth';
@@ -57,7 +57,6 @@ const Navigation = ({ onLogout }: { onLogout: () => void }) => {
           </Link>
         );
       })}
-      {/* 退出按钮 */}
       <button
         onClick={onLogout}
         className="flex flex-col items-center justify-center p-3 md:py-5 md:mt-auto text-gray-500 hover:text-red-400 transition-colors"
@@ -69,8 +68,11 @@ const Navigation = ({ onLogout }: { onLogout: () => void }) => {
   );
 };
 
-
-const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, password: string, name: string) => Promise<void> }> = ({ onLogout, onCreateStaff }) => {
+const AdminApp: React.FC<{ 
+  tenantId: string;
+  onLogout: () => void; 
+  onCreateStaff: (username: string, password: string, name: string) => Promise<void>;
+}> = ({ tenantId, onLogout, onCreateStaff }) => {
   const {
     purchases,
     orders,
@@ -82,7 +84,6 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
     loading,
     addPurchase,
     addOrder,
-    addStaff,
     deletePurchase,
     deleteOrder,
     deleteStaff,
@@ -95,23 +96,18 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
-    migrateFromLocalStorage
-  } = useFirestore();
+    refreshData
+  } = useFirestore(tenantId);
+
+  // 包装创建员工函数，创建后刷新数据
+  const handleCreateStaff = async (username: string, password: string, name: string) => {
+    await onCreateStaff(username, password, name);
+    await refreshData();
+  };
 
   const stats = useMemo(() => {
     return calculateStats(purchases, orders, settings);
   }, [purchases, orders, settings]);
-
-  const hasLocalData = localStorage.getItem('purchases') || 
-                       localStorage.getItem('orders') || 
-                       localStorage.getItem('staffList');
-
-  const handleMigrate = async () => {
-    if (confirm('确认将本地数据迁移到云端？迁移后本地数据将被清除。')) {
-      await migrateFromLocalStorage();
-      alert('数据迁移完成！');
-    }
-  };
 
   const handleDeletePurchase = async (id: string) => {
     if (confirm('确认删除该记录？')) {
@@ -120,8 +116,13 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
   };
 
   const handleDeleteStaff = async (id: string) => {
+    console.log('handleDeleteStaff called with id:', id);
     if (confirm('确认删除员工？')) {
+      console.log('User confirmed delete');
       await deleteStaff(id);
+      console.log('deleteStaff completed');
+    } else {
+      console.log('User cancelled delete');
     }
   };
 
@@ -174,15 +175,6 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
               </p>
             </div>
             <div className="hidden md:flex items-center gap-4 text-right">
-              {hasLocalData && (
-                <button
-                  onClick={handleMigrate}
-                  className="flex items-center gap-2 px-3 py-2 bg-cyber-accent/20 border border-cyber-accent/50 rounded text-cyber-accent text-sm hover:bg-cyber-accent/30 transition-colors"
-                >
-                  <CloudUpload size={16} />
-                  迁移本地数据
-                </button>
-              )}
               <div>
                 <div className="text-xs text-gray-500 font-mono mb-1">SYSTEM TIME</div>
                 <div className="text-cyber-accent font-mono text-lg">{new Date().toLocaleDateString()}</div>
@@ -193,8 +185,7 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
           <Routes>
             <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} />} />
-            
-            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={onCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} onAddMachine={addCloudMachine} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} />} />
             <Route path="/records" element={<DataList purchases={purchases} dailyStats={stats.dailyStats} onDeletePurchase={handleDeletePurchase} onDeleteDaily={() => {}} />} />
@@ -207,8 +198,7 @@ const AdminApp: React.FC<{ onLogout: () => void; onCreateStaff: (email: string, 
   );
 };
 
-
-const StaffApp: React.FC<{ staffInfo: any; onLogout: () => void }> = ({ staffInfo, onLogout }) => {
+const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => void }> = ({ staffInfo, tenantId, onLogout }) => {
   const {
     orders,
     settings,
@@ -217,7 +207,7 @@ const StaffApp: React.FC<{ staffInfo: any; onLogout: () => void }> = ({ staffInf
     cloudWindows,
     completeOrder,
     loading
-  } = useFirestore();
+  } = useFirestore(tenantId);
 
   if (loading) {
     return (
@@ -242,14 +232,14 @@ const StaffApp: React.FC<{ staffInfo: any; onLogout: () => void }> = ({ staffInf
 };
 
 const App: React.FC = () => {
-  const { user, staffInfo, loading, login, register, logout, createStaffAccount, isAdmin } = useAuth();
+  const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, isAdmin, getTenantId } = useAuth();
 
-  const handleLogin = async (email: string, password: string) => {
-    await login(email, password);
+  const handleLogin = async (username: string, password: string) => {
+    await login(username, password);
   };
 
-  const handleRegister = async (email: string, password: string, name: string) => {
-    await register(email, password, name, 'staff');
+  const handleRegisterAdmin = async (username: string, password: string, name: string) => {
+    await registerAdmin(username, password, name);
   };
 
   if (loading) {
@@ -262,16 +252,24 @@ const App: React.FC = () => {
 
   // 未登录显示登录页
   if (!user || !staffInfo) {
-    return <Login onLogin={handleLogin} onRegister={handleRegister} />;
+    return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} />;
+  }
+
+  if (!staffInfo.tenantId) {
+    return (
+      <div className="bg-cyber-bg h-screen w-screen flex items-center justify-center text-red-500 font-mono">
+        租户信息错误，请重新登录
+      </div>
+    );
   }
 
   // 管理员显示管理端
   if (isAdmin) {
-    return <AdminApp onLogout={logout} onCreateStaff={createStaffAccount} />;
+    return <AdminApp tenantId={staffInfo.tenantId} onLogout={logout} onCreateStaff={createStaffAccount} />;
   }
 
   // 员工显示员工端
-  return <StaffApp staffInfo={staffInfo} onLogout={logout} />;
+  return <StaffApp staffInfo={staffInfo} tenantId={staffInfo.tenantId} onLogout={logout} />;
 };
 
 export default App;

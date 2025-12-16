@@ -38,11 +38,8 @@ export const Dispatch: React.FC<Props> = ({
   // 选中的窗口ID列表
   const [selectedWindowIds, setSelectedWindowIds] = useState<string[]>([]);
   
-  // 添加窗口表单
+  // 显示分配窗口面板
   const [showAddWindow, setShowAddWindow] = useState(false);
-  const [newWindowMachineId, setNewWindowMachineId] = useState('');
-  const [newWindowNumber, setNewWindowNumber] = useState('');
-  const [newWindowGold, setNewWindowGold] = useState('');
 
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
   
@@ -71,33 +68,6 @@ export const Dispatch: React.FC<Props> = ({
     } else {
       setSelectedWindowIds([...selectedWindowIds, windowId]);
     }
-  };
-
-  // 添加窗口给当前员工
-  const handleAddWindowToStaff = () => {
-    if (!newWindowMachineId || !newWindowNumber) {
-      alert('请选择云机并填写窗口号');
-      return;
-    }
-    
-    // 检查员工窗口数量限制
-    const currentCount = getStaffWindows(orderForm.staffId).length;
-    if (currentCount >= 4) {
-      alert('该员工已有4个窗口，无法继续添加');
-      return;
-    }
-
-    onAddWindow({
-      machineId: newWindowMachineId,
-      windowNumber: newWindowNumber,
-      goldBalance: parseFloat(newWindowGold) || 0,
-      userId: orderForm.staffId
-    });
-
-    setNewWindowMachineId('');
-    setNewWindowNumber('');
-    setNewWindowGold('');
-    setShowAddWindow(false);
   };
 
   // 分配空闲窗口给当前员工
@@ -263,81 +233,35 @@ export const Dispatch: React.FC<Props> = ({
                     onClick={() => setShowAddWindow(!showAddWindow)}
                     className="px-3 py-1 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm flex items-center gap-1 hover:bg-cyber-primary/30"
                   >
-                    <Plus size={14} /> 添加窗口
+                    <Plus size={14} /> 分配窗口
                   </button>
                 </div>
               </div>
 
-              {/* 添加窗口表单 */}
+              {/* 分配空闲窗口 */}
               {showAddWindow && (
                 <div className="mb-4 p-4 bg-black/40 border border-cyber-primary/30 rounded">
-                  <div className="text-sm text-cyber-primary mb-3">添加新窗口给该员工</div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">选择云机</label>
-                      <select
-                        value={newWindowMachineId}
-                        onChange={e => setNewWindowMachineId(e.target.value)}
-                        className="w-full bg-black/60 border border-cyber-primary/30 text-cyber-text px-3 py-2 text-sm"
-                      >
-                        <option value="">选择云机...</option>
-                        {cloudMachines.map(m => (
-                          <option key={m.id} value={m.id}>{m.phone} ({m.platform})</option>
-                        ))}
-                      </select>
+                  <div className="text-sm text-cyber-primary mb-3">从空闲窗口中选择分配给该员工</div>
+                  {freeWindows.length > 0 ? (
+                    <div className="flex flex-wrap gap-3">
+                      {freeWindows.map(w => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => handleAssignFreeWindow(w.id)}
+                          className="px-4 py-2 bg-green-500/10 border border-green-500/50 text-green-400 text-sm rounded hover:bg-green-500/20 flex items-center gap-2"
+                        >
+                          <Circle size={10} className="fill-green-400" />
+                          <span className="font-bold">#{w.windowNumber}</span>
+                          <span className="text-gray-400">-</span>
+                          <span>{getMachineName(w.machineId)}</span>
+                          <span className="text-cyber-accent font-mono">({formatWan(w.goldBalance)})</span>
+                        </button>
+                      ))}
                     </div>
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">窗口号</label>
-                      <input
-                        type="text"
-                        value={newWindowNumber}
-                        onChange={e => setNewWindowNumber(e.target.value)}
-                        placeholder="输入窗口号"
-                        className="w-full bg-black/60 border border-cyber-primary/30 text-cyber-text px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">哈佛币余额</label>
-                      <input
-                        type="number"
-                        value={newWindowGold}
-                        onChange={e => setNewWindowGold(e.target.value)}
-                        placeholder="输入哈佛币"
-                        className="w-full bg-black/60 border border-cyber-primary/30 text-cyber-text px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddWindowToStaff}
-                      className="px-4 py-2 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30"
-                    >
-                      确认添加
-                    </button>
-                  </div>
-                  
-                  {/* 空闲窗口快速分配 */}
-                  {freeWindows.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-700">
-                      <div className="text-sm text-gray-400 mb-3">或从空闲窗口中选择:</div>
-                      <div className="flex flex-wrap gap-3">
-                        {freeWindows.slice(0, 8).map(w => (
-                          <button
-                            key={w.id}
-                            type="button"
-                            onClick={() => handleAssignFreeWindow(w.id)}
-                            className="px-4 py-2 bg-green-500/10 border border-green-500/50 text-green-400 text-sm rounded hover:bg-green-500/20 flex items-center gap-2"
-                          >
-                            <Circle size={10} className="fill-green-400" />
-                            <span className="font-bold">#{w.windowNumber}</span>
-                            <span className="text-gray-400">-</span>
-                            <span>{getMachineName(w.machineId)}</span>
-                            <span className="text-cyber-accent font-mono">({formatWan(w.goldBalance)})</span>
-                          </button>
-                        ))}
-                        {freeWindows.length > 8 && (
-                          <span className="text-sm text-gray-500 self-center">还有 {freeWindows.length - 8} 个...</span>
-                        )}
-                      </div>
+                  ) : (
+                    <div className="text-gray-500 text-center py-4">
+                      暂无空闲窗口，请先在"云机"页面添加窗口
                     </div>
                   )}
                 </div>

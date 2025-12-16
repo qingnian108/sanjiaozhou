@@ -46,9 +46,12 @@ export function useFirestore(tenantId: string | null) {
       ]);
       console.log('Data fetch complete');
 
+      console.log('Staff data from DB:', staffRes.data);
       setPurchases(purchasesRes.data.map((d: any) => ({ id: d._id, ...d })));
       setOrders(ordersRes.data.map((d: any) => ({ id: d._id, ...d })));
-      setStaffList(staffRes.data.map((d: any) => ({ id: d._id, ...d })));
+      const staffData = staffRes.data.map((d: any) => ({ id: d._id, ...d }));
+      console.log('Processed staff data:', staffData);
+      setStaffList(staffData);
       setKookChannels(kookRes.data.map((d: any) => ({ id: d._id, ...d })));
       setCloudMachines(machinesRes.data.map((d: any) => ({ id: d._id, ...d })));
       setCloudWindows(windowsRes.data.map((d: any) => ({ id: d._id, ...d })));
@@ -65,8 +68,12 @@ export function useFirestore(tenantId: string | null) {
   };
 
   useEffect(() => {
+    console.log('useFirestore useEffect triggered, tenantId:', tenantId);
     if (tenantId) {
       loadData();
+    } else {
+      console.log('No tenantId, setting loading to false');
+      setLoading(false);
     }
   }, [tenantId]);
 
@@ -130,8 +137,15 @@ export function useFirestore(tenantId: string | null) {
 
   // Delete staff
   const deleteStaff = async (id: string) => {
-    await db.collection('staff').doc(id).remove();
-    await loadData();
+    console.log('deleteStaff called with id:', id);
+    try {
+      const result = await db.collection('staff').doc(id).remove();
+      console.log('Delete result:', result);
+      await loadData();
+      console.log('Data reloaded after delete');
+    } catch (error) {
+      console.error('Delete staff failed:', error);
+    }
   };
 
   // Save settings - 按 tenantId 保存

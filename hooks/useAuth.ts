@@ -57,9 +57,18 @@ export function useAuth() {
   const login = async (username: string, password: string) => {
     try {
       console.log('开始登录...');
-      await signInAnonymously();
       
+      try {
+        await signInAnonymously();
+        console.log('匿名登录成功');
+      } catch (e) {
+        console.log('匿名登录失败，尝试继续:', e);
+      }
+      
+      console.log('查询用户...');
       const res = await db.collection('staff').where({ username }).get();
+      console.log('查询结果:', res);
+      
       if (!res.data || res.data.length === 0) {
         throw new Error('用户名不存在');
       }
@@ -70,9 +79,13 @@ export function useAuth() {
       }
       
       localStorage.setItem('currentUsername', username);
-      setStaffInfo({ id: userData._id, ...userData } as Staff);
+      const staffData = { id: userData._id, ...userData } as Staff;
+      console.log('设置 staffInfo:', staffData);
+      console.log('staffInfo.tenantId:', staffData.tenantId);
+      setStaffInfo(staffData);
       setUser({ username });
       
+      console.log('登录成功');
       return userData;
     } catch (error: any) {
       console.error('登录失败:', error);
@@ -144,6 +157,7 @@ export function useAuth() {
   };
 
   const getTenantId = () => {
+    console.log('getTenantId called, staffInfo:', staffInfo);
     return staffInfo?.tenantId || null;
   };
 
