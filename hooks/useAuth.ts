@@ -59,29 +59,45 @@ export function useAuth() {
 
   // 用户名密码登录
   const login = async (username: string, password: string) => {
-    // 先查找用户
-    const res = await db.collection('staff').where({ username }).get();
-    if (!res.data || res.data.length === 0) {
-      throw new Error('用户名不存在');
+    try {
+      console.log('开始登录流程...');
+      
+      // 先匿名登录以获取数据库查询权限
+      console.log('尝试匿名登录...');
+      await auth.signInAnonymously();
+      console.log('匿名登录成功');
+      
+      // 查找用户
+      console.log('查询用户:', username);
+      const res = await db.collection('staff').where({ username }).get();
+      console.log('查询结果:', res);
+      
+      if (!res.data || res.data.length === 0) {
+        throw new Error('用户名不存在');
+      }
+      
+      const userData = res.data[0];
+      console.log('找到用户:', userData);
+      
+      // 验证密码
+      if (userData.password !== password) {
+        throw new Error('密码错误');
+      }
+      
+      // 保存当前用户名
+      localStorage.setItem('currentUsername', username);
+      
+      setStaffInfo({ id: userData._id, ...userData } as Staff);
+      setUser({ username });
+      
+      console.log('登录成功');
+      return userData;
+    } catch (error: any) {
+      console.error('登录失败详情:', error);
+      console.error('错误代码:', error.code);
+      console.error('错误消息:', error.message);
+      throw error;
     }
-    
-    const userData = res.data[0];
-    
-    // 验证密码（简单比对，生产环境应该用哈希）
-    if (userData.password !== password) {
-      throw new Error('密码错误');
-    }
-    
-    // 使用匿名登录获取 CloudBase 权限
-    await auth.signInAnonymously();
-    
-    // 保存当前用户名
-    localStorage.setItem('currentUsername', username);
-    
-    setStaffInfo({ id: userData._id, ...userData } as Staff);
-    setUser({ username });
-    
-    return userData;
   };
 
   // 注册新用户
