@@ -28,5 +28,5 @@ jobs:
       - name: Deploy to CloudBase
         run: tcb hosting deploy ./dist -e cloud1-8gyj5ce4db7ce0ee
         env:
-          TENCENTCLOUD_SECRETID: ${{ secrets.SECRETID }}
-          TENCENTCLOUD_SECRETKEY: ${{ secrets.SECRETKEY }}
+          CLOUDBASE_SECRETID: ${{ secrets.SECRETID }}
+          CLOUDBASE_SECRETKEY: ${{ secrets.SECRETKEY }}
