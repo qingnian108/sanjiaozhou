@@ -12,6 +12,7 @@ export interface Staff {
   username?: string; // 登录用户名
   password?: string; // 密码
   role: 'admin' | 'staff'; // 角色
+  tenantId: string; // 租户ID（管理员的ID）
 }
 
 export interface OrderRecord {

@@ -8,7 +8,6 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   const loadStaffInfo = async (username: string) => {
-    // 通过用户名查找员工信息
     const res = await db.collection('staff').where({ username }).get();
     if (res.data && res.data.length > 0) {
       const data = res.data[0];
@@ -25,10 +24,10 @@ export function useAuth() {
         
         if (loginState) {
           setUser(loginState.user);
-          
-          // 从 localStorage 获取当前登录的用户名
           const currentUsername = localStorage.getItem('currentUsername');
           if (currentUsername) {
+            // 需要先匿名登录才能查询
+            await auth.signInAnonymously();
             await loadStaffInfo(currentUsername);
           }
         } else {
@@ -45,7 +44,6 @@ export function useAuth() {
 
     checkAuth();
 
-    // 监听登录状态变化
     auth.onLoginStateChanged((loginState) => {
       if (loginState) {
         setUser(loginState.user);
@@ -60,86 +58,61 @@ export function useAuth() {
   // 用户名密码登录
   const login = async (username: string, password: string) => {
     try {
-      console.log('开始登录流程...');
-      
-      // 先匿名登录以获取数据库查询权限
-      console.log('尝试匿名登录...');
+      console.log('开始登录...');
       await auth.signInAnonymously();
-      console.log('匿名登录成功');
       
-      // 查找用户
-      console.log('查询用户:', username);
       const res = await db.collection('staff').where({ username }).get();
-      console.log('查询结果:', res);
-      
       if (!res.data || res.data.length === 0) {
         throw new Error('用户名不存在');
       }
       
       const userData = res.data[0];
-      console.log('找到用户:', userData);
-      
-      // 验证密码
       if (userData.password !== password) {
         throw new Error('密码错误');
       }
       
-      // 保存当前用户名
       localStorage.setItem('currentUsername', username);
-      
       setStaffInfo({ id: userData._id, ...userData } as Staff);
       setUser({ username });
       
-      console.log('登录成功');
       return userData;
     } catch (error: any) {
-      console.error('登录失败详情:', error);
-      console.error('错误代码:', error.code);
-      console.error('错误消息:', error.message);
+      console.error('登录失败:', error);
       throw error;
     }
   };
 
-  // 注册新用户
-  const register = async (username: string, password: string, name: string, role: 'admin' | 'staff' = 'staff') => {
+  // 注册管理员账号
+  const registerAdmin = async (username: string, password: string, name: string) => {
     try {
-      console.log('开始注册流程...');
-      
-      // 先匿名登录以获取写入权限
-      console.log('尝试匿名登录...');
+      console.log('开始注册管理员...');
       await auth.signInAnonymously();
-      console.log('匿名登录成功');
       
       // 检查用户名是否已存在
-      console.log('检查用户名是否存在...');
       const existing = await db.collection('staff').where({ username }).get();
       if (existing.data && existing.data.length > 0) {
         throw new Error('用户名已存在');
       }
-      console.log('用户名可用');
       
       const id = crypto.randomUUID();
-      console.log('写入数据库...');
-      await db.collection('staff').doc(id).set({
+      const adminData = {
         username,
         password,
         name,
-        role,
+        role: 'admin',
+        tenantId: id, // 管理员的 tenantId 就是自己的 id
         joinedDate: new Date().toISOString().split('T')[0]
-      });
-      console.log('数据库写入成功');
+      };
+      
+      await db.collection('staff').doc(id).set(adminData);
       
       localStorage.setItem('currentUsername', username);
-      
-      const staffData = { id, username, password, name, role, joinedDate: new Date().toISOString().split('T')[0] };
-      setStaffInfo(staffData as Staff);
+      setStaffInfo({ id, ...adminData } as Staff);
       setUser({ username });
       
-      return staffData;
+      return adminData;
     } catch (error: any) {
-      console.error('注册失败详情:', error);
-      console.error('错误代码:', error.code);
-      console.error('错误消息:', error.message);
+      console.error('注册失败:', error);
       throw error;
     }
   };
@@ -151,8 +124,12 @@ export function useAuth() {
     setStaffInfo(null);
   };
 
-  // 管理员创建员工账号（不需要登出当前用户）
+  // 管理员创建员工账号
   const createStaffAccount = async (username: string, password: string, name: string) => {
+    if (!staffInfo || staffInfo.role !== 'admin') {
+      throw new Error('只有管理员可以创建员工账号');
+    }
+    
     // 检查用户名是否已存在
     const existing = await db.collection('staff').where({ username }).get();
     if (existing.data && existing.data.length > 0) {
@@ -165,10 +142,16 @@ export function useAuth() {
       password,
       name,
       role: 'staff',
+      tenantId: staffInfo.tenantId, // 员工的 tenantId 继承管理员的
       joinedDate: new Date().toISOString().split('T')[0]
     });
     
     return id;
+  };
+
+  // 获取当前租户ID
+  const getTenantId = () => {
+    return staffInfo?.tenantId || null;
   };
 
   return {
@@ -176,9 +159,10 @@ export function useAuth() {
     staffInfo,
     loading,
     login,
-    register,
+    registerAdmin,
     logout,
     createStaffAccount,
+    getTenantId,
     isAdmin: staffInfo?.role === 'admin',
     isStaff: staffInfo?.role === 'staff'
   };

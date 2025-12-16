@@ -9,7 +9,12 @@ const DEFAULT_SETTINGS: Settings = {
   initialCapital: 10000
 };
 
-export function useFirestore() {
+// 扩展类型，添加 tenantId
+interface TenantData {
+  tenantId: string;
+}
+
+export function useFirestore(tenantId: string | null) {
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -19,17 +24,22 @@ export function useFirestore() {
   const [cloudWindows, setCloudWindows] = useState<CloudWindow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 加载数据的函数
+  // 加载数据的函数 - 按 tenantId 过滤
   const loadData = async () => {
+    if (!tenantId) {
+      setLoading(false);
+      return;
+    }
+    
     try {
       const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes] = await Promise.all([
-        db.collection('purchases').get(),
-        db.collection('orders').get(),
-        db.collection('staff').get(),
-        db.collection('config').doc('settings').get(),
-        db.collection('kookChannels').get(),
-        db.collection('cloudMachines').get(),
-        db.collection('cloudWindows').get()
+        db.collection('purchases').where({ tenantId }).get(),
+        db.collection('orders').where({ tenantId }).get(),
+        db.collection('staff').where({ tenantId }).get(),
+        db.collection('config').doc(`settings_${tenantId}`).get(),
+        db.collection('kookChannels').where({ tenantId }).get(),
+        db.collection('cloudMachines').where({ tenantId }).get(),
+        db.collection('cloudWindows').where({ tenantId }).get()
       ]);
 
       setPurchases(purchasesRes.data.map((d: any) => ({ id: d._id, ...d })));
@@ -49,87 +59,30 @@ export function useFirestore() {
   };
 
   useEffect(() => {
-    loadData();
+    if (tenantId) {
+      loadData();
+    }
+  }, [tenantId]);
 
-    // CloudBase 实时监听
-    const watchers: any[] = [];
-
-    watchers.push(
-      db.collection('purchases').watch({
-        onChange: (snapshot: any) => {
-          setPurchases(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch purchases error:', err)
-      })
-    );
-
-    watchers.push(
-      db.collection('orders').watch({
-        onChange: (snapshot: any) => {
-          setOrders(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch orders error:', err)
-      })
-    );
-
-    watchers.push(
-      db.collection('staff').watch({
-        onChange: (snapshot: any) => {
-          setStaffList(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch staff error:', err)
-      })
-    );
-
-    watchers.push(
-      db.collection('kookChannels').watch({
-        onChange: (snapshot: any) => {
-          setKookChannels(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch kookChannels error:', err)
-      })
-    );
-
-    watchers.push(
-      db.collection('cloudMachines').watch({
-        onChange: (snapshot: any) => {
-          setCloudMachines(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch cloudMachines error:', err)
-      })
-    );
-
-    watchers.push(
-      db.collection('cloudWindows').watch({
-        onChange: (snapshot: any) => {
-          setCloudWindows(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
-        },
-        onError: (err: any) => console.error('Watch cloudWindows error:', err)
-      })
-    );
-
-    return () => {
-      watchers.forEach(w => w.close());
-    };
-  }, []);
-
-  // 生成唯一ID
   const generateId = () => crypto.randomUUID();
 
-  // Add purchase
+  // Add purchase - 带 tenantId
   const addPurchase = async (record: Omit<PurchaseRecord, 'id'>) => {
+    if (!tenantId) return;
     const id = generateId();
-    await db.collection('purchases').doc(id).set(record);
+    await db.collection('purchases').doc(id).set({ ...record, tenantId });
     await loadData();
   };
 
-  // Add order
+  // Add order - 带 tenantId
   const addOrder = async (record: Omit<OrderRecord, 'id'>, windowSnapshots: WindowSnapshot[]) => {
+    if (!tenantId) return;
     const id = generateId();
     await db.collection('orders').doc(id).set({
       ...record,
       status: 'pending',
-      windowSnapshots
+      windowSnapshots,
+      tenantId
     });
     await loadData();
   };
@@ -149,22 +102,11 @@ export function useFirestore() {
       loss: loss > 0 ? loss : 0
     });
 
-    // 更新每个窗口的哈佛币余额
     for (const result of windowResults) {
       await db.collection('cloudWindows').doc(result.windowId).update({
         goldBalance: result.endBalance
       });
     }
-    await loadData();
-  };
-
-  // Add staff
-  const addStaff = async (name: string) => {
-    const id = generateId();
-    await db.collection('staff').doc(id).set({
-      name,
-      joinedDate: new Date().toISOString().split('T')[0]
-    });
     await loadData();
   };
 
@@ -186,16 +128,18 @@ export function useFirestore() {
     await loadData();
   };
 
-  // Save settings
+  // Save settings - 按 tenantId 保存
   const saveSettings = async (newSettings: Settings) => {
-    await db.collection('config').doc('settings').set(newSettings);
+    if (!tenantId) return;
+    await db.collection('config').doc(`settings_${tenantId}`).set({ ...newSettings, tenantId });
     setSettings(newSettings);
   };
 
-  // Kook Channels
+  // Kook Channels - 带 tenantId
   const addKookChannel = async (channel: Omit<KookChannel, 'id'>) => {
+    if (!tenantId) return;
     const id = generateId();
-    await db.collection('kookChannels').doc(id).set(channel);
+    await db.collection('kookChannels').doc(id).set({ ...channel, tenantId });
     await loadData();
   };
 
@@ -204,17 +148,17 @@ export function useFirestore() {
     await loadData();
   };
 
-  // Cloud Machines
+  // Cloud Machines - 带 tenantId
   const addCloudMachine = async (machine: Omit<CloudMachine, 'id'>) => {
+    if (!tenantId) return '';
     const id = generateId();
-    await db.collection('cloudMachines').doc(id).set(machine);
+    await db.collection('cloudMachines').doc(id).set({ ...machine, tenantId });
     await loadData();
     return id;
   };
 
   const deleteCloudMachine = async (id: string) => {
     await db.collection('cloudMachines').doc(id).remove();
-    // 删除该云机的所有窗口
     const windows = cloudWindows.filter(w => w.machineId === id);
     for (const w of windows) {
       await db.collection('cloudWindows').doc(w.id).remove();
@@ -227,10 +171,11 @@ export function useFirestore() {
     await loadData();
   };
 
-  // Cloud Windows
+  // Cloud Windows - 带 tenantId
   const addCloudWindow = async (window: Omit<CloudWindow, 'id'>) => {
+    if (!tenantId) return;
     const id = generateId();
-    await db.collection('cloudWindows').doc(id).set(window);
+    await db.collection('cloudWindows').doc(id).set({ ...window, tenantId });
     await loadData();
   };
 
@@ -239,67 +184,13 @@ export function useFirestore() {
     await loadData();
   };
 
-  const assignWindow = async (windowId: string, oderId: string | null) => {
-    await db.collection('cloudWindows').doc(windowId).update({ userId: oderId });
+  const assignWindow = async (windowId: string, userId: string | null) => {
+    await db.collection('cloudWindows').doc(windowId).update({ userId });
     await loadData();
   };
 
   const updateWindowGold = async (windowId: string, goldBalance: number) => {
     await db.collection('cloudWindows').doc(windowId).update({ goldBalance });
-    await loadData();
-  };
-
-  // Migrate from localStorage
-  const migrateFromLocalStorage = async () => {
-    const localPurchases = localStorage.getItem('purchases');
-    if (localPurchases) {
-      const items = JSON.parse(localPurchases) as PurchaseRecord[];
-      for (const item of items) {
-        await db.collection('purchases').doc(item.id).set({
-          date: item.date,
-          amount: item.amount,
-          cost: item.cost
-        });
-      }
-    }
-
-    const localOrders = localStorage.getItem('orders');
-    if (localOrders) {
-      const items = JSON.parse(localOrders) as OrderRecord[];
-      for (const item of items) {
-        await db.collection('orders').doc(item.id).set({
-          date: item.date,
-          staffId: item.staffId,
-          amount: item.amount,
-          loss: item.loss,
-          feePercent: item.feePercent,
-          unitPrice: item.unitPrice
-        });
-      }
-    }
-
-    const localStaff = localStorage.getItem('staffList');
-    if (localStaff) {
-      const items = JSON.parse(localStaff) as Staff[];
-      for (const item of items) {
-        await db.collection('staff').doc(item.id).set({
-          name: item.name,
-          joinedDate: item.joinedDate
-        });
-      }
-    }
-
-    const localSettings = localStorage.getItem('settings');
-    if (localSettings) {
-      await db.collection('config').doc('settings').set(JSON.parse(localSettings));
-    }
-
-    // Clear localStorage
-    localStorage.removeItem('purchases');
-    localStorage.removeItem('orders');
-    localStorage.removeItem('staffList');
-    localStorage.removeItem('settings');
-
     await loadData();
   };
 
@@ -315,7 +206,6 @@ export function useFirestore() {
     addPurchase,
     addOrder,
     completeOrder,
-    addStaff,
     deletePurchase,
     deleteOrder,
     deleteStaff,
@@ -329,7 +219,6 @@ export function useFirestore() {
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
-    migrateFromLocalStorage,
     refreshData: loadData
   };
 }
