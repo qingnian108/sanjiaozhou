@@ -8,8 +8,13 @@ const app = cloudbase.init({
 });
 
 export const auth = app.auth({
-  persistence: 'local' // 本地持久化登录状态
+  persistence: 'local'
 });
+
+// 匿名登录函数
+export const signInAnonymously = async () => {
+  return auth.anonymousAuthProvider().signIn();
+};
 
 export const db = app.database();
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { auth, db } from '../cloudbase';
+import { auth, db, signInAnonymously } from '../cloudbase';
 import { Staff } from '../types';
 
 export function useAuth() {
@@ -26,8 +26,7 @@ export function useAuth() {
           setUser(loginState.user);
           const currentUsername = localStorage.getItem('currentUsername');
           if (currentUsername) {
-            // 需要先匿名登录才能查询
-            await auth.signInAnonymously();
+            await signInAnonymously();
             await loadStaffInfo(currentUsername);
           }
         } else {
@@ -55,11 +54,10 @@ export function useAuth() {
     });
   }, []);
 
-  // 用户名密码登录
   const login = async (username: string, password: string) => {
     try {
       console.log('开始登录...');
-      await auth.signInAnonymously();
+      await signInAnonymously();
       
       const res = await db.collection('staff').where({ username }).get();
       if (!res.data || res.data.length === 0) {
@@ -82,13 +80,11 @@ export function useAuth() {
     }
   };
 
-  // 注册管理员账号
   const registerAdmin = async (username: string, password: string, name: string) => {
     try {
       console.log('开始注册管理员...');
-      await auth.signInAnonymously();
+      await signInAnonymously();
       
-      // 检查用户名是否已存在
       const existing = await db.collection('staff').where({ username }).get();
       if (existing.data && existing.data.length > 0) {
         throw new Error('用户名已存在');
@@ -100,7 +96,7 @@ export function useAuth() {
         password,
         name,
         role: 'admin',
-        tenantId: id, // 管理员的 tenantId 就是自己的 id
+        tenantId: id,
         joinedDate: new Date().toISOString().split('T')[0]
       };
       
@@ -124,13 +120,11 @@ export function useAuth() {
     setStaffInfo(null);
   };
 
-  // 管理员创建员工账号
   const createStaffAccount = async (username: string, password: string, name: string) => {
     if (!staffInfo || staffInfo.role !== 'admin') {
       throw new Error('只有管理员可以创建员工账号');
     }
     
-    // 检查用户名是否已存在
     const existing = await db.collection('staff').where({ username }).get();
     if (existing.data && existing.data.length > 0) {
       throw new Error('用户名已存在');
@@ -142,14 +136,13 @@ export function useAuth() {
       password,
       name,
       role: 'staff',
-      tenantId: staffInfo.tenantId, // 员工的 tenantId 继承管理员的
+      tenantId: staffInfo.tenantId,
       joinedDate: new Date().toISOString().split('T')[0]
     });
     
     return id;
   };
 
-  // 获取当前租户ID
   const getTenantId = () => {
     return staffInfo?.tenantId || null;
   };
