@@ -20,9 +20,9 @@ import { StaffPortal } from './components/StaffPortal';
 const NAV_ITEMS = [
   { path: '/', label: '总览', icon: LayoutDashboard },
   { path: '/dispatch', label: '派单', icon: Send, glow: true },
+  { path: '/cloud', label: '云机', icon: Monitor },
   { path: '/staff', label: '员工', icon: Users },
   { path: '/kook', label: 'Kook', icon: MessageSquare },
-  { path: '/cloud', label: '云机', icon: Monitor },
   { path: '/records', label: '明细', icon: Database },
   { path: '/reports', label: '分析', icon: BarChart3 },
   { path: '/settings', label: '设置', icon: SettingsIcon },
