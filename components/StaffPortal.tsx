@@ -32,7 +32,25 @@ export const StaffPortal: React.FC<Props> = ({
   onRequestWindow
 }) => {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [windowBalances, setWindowBalances] = useState<Record<string, string>>({});
+  // 按订单ID存储窗口余额和保存状态，关闭弹窗后保留数据
+  const [orderWindowBalances, setOrderWindowBalances] = useState<Record<string, Record<string, string>>>({});
+  const [orderSavedWindows, setOrderSavedWindows] = useState<Record<string, Record<string, boolean>>>({});
+  
+  // 当前订单的窗口余额和保存状态
+  const windowBalances = activeOrderId ? (orderWindowBalances[activeOrderId] || {}) : {};
+  const savedWindows = activeOrderId ? (orderSavedWindows[activeOrderId] || {}) : {};
+  
+  const setWindowBalances = (balances: Record<string, string>) => {
+    if (activeOrderId) {
+      setOrderWindowBalances(prev => ({ ...prev, [activeOrderId]: balances }));
+    }
+  };
+  
+  const setSavedWindows = (saved: Record<string, boolean>) => {
+    if (activeOrderId) {
+      setOrderSavedWindows(prev => ({ ...prev, [activeOrderId]: saved }));
+    }
+  };
   const [dateFilter, setDateFilter] = useState('');
   const [pauseAmount, setPauseAmount] = useState('');
   const [showPauseModal, setShowPauseModal] = useState<string | null>(null);
@@ -160,16 +178,20 @@ export const StaffPortal: React.FC<Props> = ({
     }
 
     onCompleteOrder(order.id, results);
+    // 完成后清空该订单的临时数据
+    setOrderWindowBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
+    setOrderSavedWindows(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setActiveOrderId(null);
-    setWindowBalances({});
   };
 
   // 确认完成订单（消耗不足时）
   const confirmCompleteOrder = () => {
     if (pendingCompleteOrder) {
       onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results);
+      // 完成后清空该订单的临时数据
+      setOrderWindowBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
+      setOrderSavedWindows(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setActiveOrderId(null);
-      setWindowBalances({});
       setPendingCompleteOrder(null);
     }
   };
@@ -307,12 +329,14 @@ export const StaffPortal: React.FC<Props> = ({
                   const inputValue = windowBalances[snap.windowId] || '';
                   const endBalance = inputValue ? parseFloat(inputValue) : snap.startBalance;
                   const consumed = snap.startBalance - endBalance;
+                  const isSaved = savedWindows[snap.windowId];
                   return (
-                    <div key={snap.windowId} className="bg-black/30 p-3 rounded border border-cyber-primary/20">
+                    <div key={snap.windowId} className={`bg-black/30 p-3 rounded border ${isSaved ? 'border-green-500/50' : 'border-cyber-primary/20'}`}>
                       <div className="flex justify-between items-center mb-2">
                         <div>
                           <span className="font-mono">#{snap.windowNumber}</span>
                           <span className="text-xs text-gray-500 ml-2">{snap.machineName}</span>
+                          {isSaved && <span className="text-xs text-green-400 ml-2">✓ 已保存</span>}
                         </div>
                         <div className="text-xs text-gray-400">开始: {formatWan(snap.startBalance)}</div>
                       </div>
@@ -324,9 +348,27 @@ export const StaffPortal: React.FC<Props> = ({
                           onChange={e => setWindowBalances({...windowBalances, [snap.windowId]: e.target.value})}
                           className="flex-1 bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 placeholder:text-gray-600 placeholder:opacity-50"
                         />
-                        <div className={`text-sm font-mono min-w-[100px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        <div className={`text-sm font-mono min-w-[80px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
                           消耗: {formatWan(consumed)}
                         </div>
+                        <button
+                          onClick={() => {
+                            if (inputValue) {
+                              setSavedWindows({...savedWindows, [snap.windowId]: true});
+                              showSuccess('已保存', `窗口 #${snap.windowNumber} 数据已临时保存`);
+                            }
+                          }}
+                          disabled={!inputValue}
+                          className={`px-3 py-2 text-xs font-mono border ${
+                            isSaved 
+                              ? 'bg-green-500/20 border-green-500 text-green-400' 
+                              : inputValue 
+                                ? 'border-cyber-primary text-cyber-primary hover:bg-cyber-primary/20' 
+                                : 'border-gray-600 text-gray-600 cursor-not-allowed'
+                          }`}
+                        >
+                          {isSaved ? '已存' : '保存'}
+                        </button>
                       </div>
                     </div>
                   );
