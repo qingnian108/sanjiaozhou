@@ -126,7 +126,9 @@ export function useFirestore(tenantId: string | null) {
     if (!order || !order.windowSnapshots) return;
 
     const totalConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
-    const loss = totalConsumed - order.amount;
+    // 订单金额是万，需要转换成实际数量（1万 = 10000）
+    const orderAmountInCoins = order.amount * 10000;
+    const loss = totalConsumed - orderAmountInCoins;
 
     // 获取当前员工信息
     const currentStaff = staffList.find(s => s.id === order.staffId);

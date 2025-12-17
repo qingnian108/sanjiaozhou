@@ -590,19 +590,23 @@ export const StaffPortal: React.FC<Props> = ({
                     <th className="py-2 px-2 text-cyber-primary font-mono">金额(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">消耗(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">损耗(万)</th>
-                    <th className="py-2 px-2 text-cyber-primary font-mono">手续费</th>
+                    <th className="py-2 px-2 text-cyber-primary font-mono">损耗比</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {completedOrders.map(order => (
+                  {completedOrders.map(order => {
+                    const consumed = order.totalConsumed || order.amount * 10000;
+                    const lossRatio = consumed > 0 ? ((order.loss || 0) / consumed * 100).toFixed(2) : '0';
+                    return (
                     <tr key={order.id} className="border-b border-gray-800">
                       <td className="py-2 px-2 font-mono">{order.date}</td>
                       <td className="py-2 px-2 text-cyber-accent">{order.amount}</td>
-                      <td className="py-2 px-2">{toWan(order.totalConsumed || order.amount * 10000)}</td>
+                      <td className="py-2 px-2">{toWan(consumed)}</td>
                       <td className="py-2 px-2 text-red-400">{order.loss > 0 ? toWan(order.loss) : '-'}</td>
-                      <td className="py-2 px-2">{order.feePercent}%</td>
+                      <td className="py-2 px-2">{lossRatio}%</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

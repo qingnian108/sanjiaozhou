@@ -32,14 +32,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   }, [purchases]);
 
   // 计算累计利润（已完成订单的收入 - 成本）
+  // order.amount 是万，order.loss 是实际数量
   const totalProfit = useMemo(() => {
     const completedOrders = orders.filter(o => o.status === 'completed');
     let profit = 0;
     completedOrders.forEach(order => {
       // 收入 = 订单金额 * 单价 / 1000
       const revenue = (order.amount / 1000) * order.unitPrice;
-      // 成本 = (订单金额 + 损耗) * 平均成本 / 1000 + 员工成本
-      const cogs = ((order.amount + (order.loss || 0)) / 1000) * avgCost;
+      // 损耗转换成万
+      const lossInWan = (order.loss || 0) / 10000;
+      // 成本 = (订单金额 + 损耗万) * 平均成本 / 1000 + 员工成本
+      const cogs = ((order.amount + lossInWan) / 1000) * avgCost;
       const laborCost = (order.amount / 1000) * settings.employeeCostRate;
       profit += revenue - cogs - laborCost;
     });
@@ -91,9 +94,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   };
 
   // 计算订单利润（收入 - 成本 - 员工成本）
+  // order.amount 是万，order.loss 是实际数量，需要转换
   const getOrderProfit = (order: OrderRecord) => {
     const revenue = getOrderRevenue(order);
-    const cogs = ((order.amount + (order.loss || 0)) / 1000) * avgCost;
+    const lossInWan = (order.loss || 0) / 10000; // 转换成万
+    const cogs = ((order.amount + lossInWan) / 1000) * avgCost;
     const laborCost = (order.amount / 1000) * settings.employeeCostRate;
     return revenue - cogs - laborCost;
   };
@@ -343,7 +348,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
                         利润 ¥{getOrderProfit(order).toFixed(0)}
                       </span>
                       {order.loss > 0 && (
-                        <span className="text-xs text-red-400 ml-2">(损耗 {order.loss} 万)</span>
+                        <span className="text-xs text-red-400 ml-2">(损耗 {(order.loss / 10000).toFixed(0)} 万)</span>
                       )}
                     </div>
                   </div>

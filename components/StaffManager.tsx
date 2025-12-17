@@ -200,7 +200,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                         <th className="p-3">订单金额 (万)</th>
                         <th className="p-3 text-red-500">损耗 (万)</th>
                         <th className="p-3 text-yellow-500">损耗比 (%)</th>
-                        <th className="p-3 text-green-500">手续费 (%)</th>
                         <th className="p-3 text-right">操作</th>
                       </tr>
                     </thead>
@@ -215,7 +214,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                             <td className="p-3 text-cyber-primary font-bold">{formatNumber(r.amount)}</td>
                             <td className="p-3 text-red-500">{r.loss > 0 ? toWan(r.loss) : '-'}</td>
                             <td className="p-3 text-yellow-500">{r.loss > 0 ? `${lossRatio}%` : '-'}</td>
-                            <td className="p-3 text-gray-500">{r.feePercent}%</td>
                             <td className="p-3 text-right">
                               <button 
                                 onClick={() => setDeleteOrderId(r.id)}
