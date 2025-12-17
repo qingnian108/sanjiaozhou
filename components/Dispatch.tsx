@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Send, Check, Plus, Trash2, Circle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight } from 'lucide-react';
 import { GlassCard, CyberInput, SectionHeader } from './CyberUI';
 import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot } from '../types';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -10,9 +10,11 @@ interface Props {
   staffList: Staff[];
   cloudWindows: CloudWindow[];
   cloudMachines: CloudMachine[];
+  orders: OrderRecord[];
   onAddWindow: (window: Omit<CloudWindow, 'id'>) => void;
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
+  onResumeOrder: (orderId: string, newStaffId?: string) => void;
 }
 
 export const Dispatch: React.FC<Props> = ({ 
@@ -21,9 +23,11 @@ export const Dispatch: React.FC<Props> = ({
   staffList,
   cloudWindows,
   cloudMachines,
+  orders,
   onAddWindow,
   onDeleteWindow,
-  onAssignWindow
+  onAssignWindow,
+  onResumeOrder
 }) => {
   const today = new Date().toISOString().split('T')[0];
 
@@ -40,6 +44,34 @@ export const Dispatch: React.FC<Props> = ({
   
   // 显示分配窗口面板
   const [showAddWindow, setShowAddWindow] = useState(false);
+  
+  // 转派订单
+  const [transferOrderId, setTransferOrderId] = useState<string | null>(null);
+  const [transferStaffId, setTransferStaffId] = useState('');
+
+  // 暂停中的订单
+  const pausedOrders = useMemo(() => {
+    return orders.filter(o => o.status === 'paused');
+  }, [orders]);
+
+  // 获取员工名称
+  const getStaffName = (staffId: string) => {
+    const staff = staffList.find(s => s.id === staffId);
+    return staff?.name || '未知';
+  };
+
+  // 恢复订单给原员工
+  const handleResumeToOriginal = (orderId: string) => {
+    onResumeOrder(orderId);
+  };
+
+  // 转派订单给其他员工
+  const handleTransferOrder = () => {
+    if (!transferOrderId || !transferStaffId) return;
+    onResumeOrder(transferOrderId, transferStaffId);
+    setTransferOrderId(null);
+    setTransferStaffId('');
+  };
 
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
   
@@ -144,6 +176,77 @@ export const Dispatch: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       <SectionHeader title="派单中心" icon={Send} />
+
+      {/* 暂停中的订单 */}
+      {pausedOrders.length > 0 && (
+        <GlassCard>
+          <div className="flex items-center gap-2 mb-4 text-orange-400">
+            <Pause size={20} />
+            <h2 className="font-mono text-lg">暂停中的订单 ({pausedOrders.length})</h2>
+          </div>
+          <div className="space-y-3">
+            {pausedOrders.map(order => (
+              <div key={order.id} className="bg-orange-500/10 border border-orange-500/30 p-4 rounded">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-mono text-lg">{order.date}</div>
+                    <div className="text-sm text-gray-400">
+                      员工: <span className="text-white">{getStaffName(order.staffId)}</span>
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      总金额: <span className="text-cyber-accent">{order.amount}</span> 万 | 
+                      已完成: <span className="text-green-400">{order.completedAmount || 0}</span> 万 | 
+                      剩余: <span className="text-orange-400">{order.amount - (order.completedAmount || 0)}</span> 万
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleResumeToOriginal(order.id)}
+                      className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30 flex items-center gap-1"
+                    >
+                      <Play size={14} /> 恢复
+                    </button>
+                    <button
+                      onClick={() => setTransferOrderId(order.id)}
+                      className="px-3 py-1 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm hover:bg-cyber-primary/30 flex items-center gap-1"
+                    >
+                      <ArrowRight size={14} /> 转派
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* 转派弹窗 */}
+      {transferOrderId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-md w-full">
+            <h3 className="text-xl font-mono text-cyber-primary mb-4">转派订单</h3>
+            <p className="text-gray-400 text-sm mb-4">选择要接手的员工：</p>
+            <select
+              value={transferStaffId}
+              onChange={e => setTransferStaffId(e.target.value)}
+              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
+            >
+              <option value="">选择员工...</option>
+              {staffList.filter(s => s.role === 'staff').map(staff => (
+                <option key={staff.id} value={staff.id}>{staff.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setTransferOrderId(null); setTransferStaffId(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <button onClick={handleTransferOrder} disabled={!transferStaffId} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 disabled:opacity-50">
+                确认转派
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <GlassCard className="relative overflow-hidden">
         {/* 发光效果 */}

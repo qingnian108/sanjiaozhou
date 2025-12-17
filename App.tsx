@@ -81,6 +81,7 @@ const AdminApp: React.FC<{
     kookChannels,
     cloudMachines,
     cloudWindows,
+    windowRequests,
     loading,
     addPurchase,
     addOrder,
@@ -96,6 +97,9 @@ const AdminApp: React.FC<{
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
+    resumeOrder,
+    processWindowRequest,
+    rechargeWindow,
     refreshData
   } = useFirestore(tenantId);
 
@@ -184,10 +188,10 @@ const AdminApp: React.FC<{
 
           <Routes>
             <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} />} />
-            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} />} />
+            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
-            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} onAddMachine={addCloudMachine} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} />} />
+            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} adminId={tenantId} onAddMachine={addCloudMachine} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/records" element={<DataList purchases={purchases} dailyStats={stats.dailyStats} onDeletePurchase={handleDeletePurchase} onDeleteDaily={() => {}} />} />
             <Route path="/reports" element={<Reports dailyStats={stats.dailyStats} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
@@ -205,7 +209,10 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
     kookChannels,
     cloudMachines,
     cloudWindows,
+    windowRequests,
     completeOrder,
+    pauseOrder,
+    createWindowRequest,
     loading
   } = useFirestore(tenantId);
 
@@ -225,8 +232,11 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
       cloudWindows={cloudWindows}
       cloudMachines={cloudMachines}
       settings={settings}
+      windowRequests={windowRequests}
       onLogout={onLogout}
       onCompleteOrder={completeOrder}
+      onPauseOrder={pauseOrder}
+      onRequestWindow={createWindowRequest}
     />
   );
 };

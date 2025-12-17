@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { User, Monitor, MessageSquare, FileText, LogOut, Coins, Clock, CheckCircle, Filter } from 'lucide-react';
-import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult } from '../types';
+import { User, Monitor, MessageSquare, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Pause, Plus } from 'lucide-react';
+import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult, WindowRequest } from '../types';
 import { GlassCard, StatBox, CyberButton } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
 
@@ -11,8 +11,11 @@ interface Props {
   cloudWindows: CloudWindow[];
   cloudMachines: CloudMachine[];
   settings: Settings;
+  windowRequests: WindowRequest[];
   onLogout: () => void;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
+  onPauseOrder: (orderId: string, completedAmount: number) => void;
+  onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
 }
 
 export const StaffPortal: React.FC<Props> = ({
@@ -22,12 +25,17 @@ export const StaffPortal: React.FC<Props> = ({
   cloudWindows,
   cloudMachines,
   settings,
+  windowRequests,
   onLogout,
-  onCompleteOrder
+  onCompleteOrder,
+  onPauseOrder,
+  onRequestWindow
 }) => {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [windowBalances, setWindowBalances] = useState<Record<string, string>>({});
   const [dateFilter, setDateFilter] = useState('');
+  const [pauseAmount, setPauseAmount] = useState('');
+  const [showPauseModal, setShowPauseModal] = useState<string | null>(null);
 
   // 我的订单
   const myOrders = useMemo(() => {
@@ -38,6 +46,16 @@ export const StaffPortal: React.FC<Props> = ({
   const pendingOrders = useMemo(() => {
     return myOrders.filter(o => o.status === 'pending');
   }, [myOrders]);
+
+  // 暂停中的订单
+  const pausedOrders = useMemo(() => {
+    return myOrders.filter(o => o.status === 'paused');
+  }, [myOrders]);
+
+  // 我的窗口申请
+  const myRequests = useMemo(() => {
+    return windowRequests.filter(r => r.staffId === staff.id);
+  }, [windowRequests, staff.id]);
 
   // 已完成的订单
   const completedOrders = useMemo(() => {
@@ -67,6 +85,32 @@ export const StaffPortal: React.FC<Props> = ({
   const getMachineName = (machineId: string) => {
     const machine = cloudMachines.find(m => m.id === machineId);
     return machine ? `${machine.phone} (${machine.platform})` : '未知';
+  };
+
+  // 处理暂停订单
+  const handlePauseOrder = (orderId: string) => {
+    const amount = parseFloat(pauseAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('请输入有效的已完成金额');
+      return;
+    }
+    onPauseOrder(orderId, amount);
+    setShowPauseModal(null);
+    setPauseAmount('');
+  };
+
+  // 处理申请窗口
+  const handleRequestWindow = () => {
+    onRequestWindow(staff.id, staff.name, 'apply');
+    alert('窗口申请已提交，请等待管理员审批');
+  };
+
+  // 处理释放窗口
+  const handleReleaseWindow = (windowId: string) => {
+    if (confirm('确定要申请释放这个窗口吗？')) {
+      onRequestWindow(staff.id, staff.name, 'release', windowId);
+      alert('释放申请已提交，请等待管理员审批');
+    }
   };
 
   // 处理完成订单
@@ -136,17 +180,76 @@ export const StaffPortal: React.FC<Props> = ({
                       <div className="font-mono text-lg">{order.date}</div>
                       <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent">{formatChineseNumber(order.amount)}</span> 万</div>
                     </div>
-                    <CyberButton onClick={() => {
-                      setActiveOrderId(order.id);
-                      // 初始化窗口余额输入
-                      const balances: Record<string, string> = {};
-                      order.windowSnapshots?.forEach(snap => {
-                        balances[snap.windowId] = '';
-                      });
-                      setWindowBalances(balances);
-                    }}>
-                      填写结果
-                    </CyberButton>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowPauseModal(order.id)}
+                        className="px-3 py-2 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-1 text-sm"
+                      >
+                        <Pause size={14} /> 暂停
+                      </button>
+                      <CyberButton onClick={() => {
+                        setActiveOrderId(order.id);
+                        const balances: Record<string, string> = {};
+                        order.windowSnapshots?.forEach(snap => {
+                          balances[snap.windowId] = '';
+                        });
+                        setWindowBalances(balances);
+                      }}>
+                        填写结果
+                      </CyberButton>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+        )}
+
+        {/* 暂停订单弹窗 */}
+        {showPauseModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-md w-full">
+              <h3 className="text-xl font-mono text-yellow-400 mb-4">暂停订单</h3>
+              <p className="text-gray-400 text-sm mb-4">请输入已完成的金额（万），剩余部分可以稍后继续或转给其他员工</p>
+              <input
+                type="number"
+                placeholder="已完成金额（万）"
+                value={pauseAmount}
+                onChange={e => setPauseAmount(e.target.value)}
+                className="w-full bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2 mb-4"
+              />
+              <div className="flex gap-3">
+                <button onClick={() => { setShowPauseModal(null); setPauseAmount(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                  取消
+                </button>
+                <button onClick={() => handlePauseOrder(showPauseModal)} className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30">
+                  确认暂停
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 暂停中的订单 */}
+        {pausedOrders.length > 0 && (
+          <GlassCard className="mb-6">
+            <div className="flex items-center gap-2 mb-4 text-orange-400">
+              <Pause size={20} />
+              <h2 className="font-mono text-lg">暂停中的订单 ({pausedOrders.length})</h2>
+            </div>
+            <div className="space-y-3">
+              {pausedOrders.map(order => (
+                <div key={order.id} className="bg-orange-500/10 border border-orange-500/30 p-4 rounded">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-mono text-lg">{order.date}</div>
+                      <div className="text-sm text-gray-400">
+                        总金额: <span className="text-cyber-accent">{order.amount}</span> 万 | 
+                        已完成: <span className="text-green-400">{order.completedAmount || 0}</span> 万 | 
+                        剩余: <span className="text-orange-400">{order.amount - (order.completedAmount || 0)}</span> 万
+                      </div>
+                    </div>
+                    <span className="text-orange-400 text-sm">等待恢复</span>
                   </div>
                 </div>
               ))}
@@ -278,24 +381,52 @@ export const StaffPortal: React.FC<Props> = ({
           </GlassCard>
 
           <GlassCard>
-            <div className="flex items-center gap-2 mb-4 text-cyber-primary">
-              <Monitor size={20} />
-              <h2 className="font-mono text-lg">我的云机窗口</h2>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-cyber-primary">
+                <Monitor size={20} />
+                <h2 className="font-mono text-lg">我的云机窗口</h2>
+              </div>
+              <button
+                onClick={handleRequestWindow}
+                className="px-3 py-1 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm flex items-center gap-1 hover:bg-cyber-primary/30"
+              >
+                <Plus size={14} /> 申请窗口
+              </button>
             </div>
             {myWindows.length === 0 ? (
               <p className="text-gray-500 text-center py-4">暂无分配</p>
             ) : (
               <div className="space-y-2">
                 {myWindows.map(window => (
-                  <div key={window.id} className="flex justify-between items-center p-3 bg-black/30 rounded border border-cyber-primary/20">
+                  <div key={window.id} className="flex justify-between items-center p-3 bg-black/30 rounded border border-cyber-primary/20 group">
                     <div>
                       <div className="font-mono">窗口 #{window.windowNumber}</div>
                       <div className="text-sm text-gray-400">{getMachineName(window.machineId)}</div>
                     </div>
-                    <div className="text-cyber-accent font-mono flex items-center gap-1">
-                      <Coins size={14} />
-                      {formatWan(window.goldBalance)}
+                    <div className="flex items-center gap-3">
+                      <div className={`font-mono flex items-center gap-1 ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
+                        <Coins size={14} />
+                        {formatWan(window.goldBalance)}
+                        {window.goldBalance < 1000000 && <span className="text-xs">(低)</span>}
+                      </div>
+                      <button
+                        onClick={() => handleReleaseWindow(window.id)}
+                        className="text-xs text-gray-500 hover:text-yellow-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        释放
+                      </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 待审批的申请 */}
+            {myRequests.filter(r => r.status === 'pending').length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="text-sm text-gray-400 mb-2">待审批申请:</div>
+                {myRequests.filter(r => r.status === 'pending').map(req => (
+                  <div key={req.id} className="text-xs text-yellow-400 bg-yellow-500/10 p-2 rounded mb-1">
+                    {req.type === 'apply' ? '申请新窗口' : '申请释放窗口'} - 等待审批中...
                   </div>
                 ))}
               </div>

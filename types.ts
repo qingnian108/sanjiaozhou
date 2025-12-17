@@ -23,10 +23,21 @@ export interface OrderRecord {
   loss: number;   // Extra shrinkage/loss (Wan) - Adds to COGS but no Revenue
   feePercent: number;
   unitPrice: number; // CNY per 1000 wan (Specific to this order)
-  status: 'pending' | 'completed'; // 订单状态：进行中 | 已完成
+  status: 'pending' | 'paused' | 'completed'; // 订单状态：进行中 | 暂停 | 已完成
   windowSnapshots?: WindowSnapshot[]; // 订单开始时的窗口快照
   windowResults?: WindowResult[]; // 订单结束时的窗口结果
   totalConsumed?: number; // 总消耗
+  completedAmount?: number; // 已完成金额（暂停时记录）
+  executionHistory?: OrderExecution[]; // 执行历史（多人协作时）
+}
+
+// 订单执行记录（支持多人协作）
+export interface OrderExecution {
+  staffId: string;
+  staffName: string;
+  amount: number; // 该员工完成的金额
+  startTime: string;
+  endTime?: string;
 }
 
 // 订单开始时的窗口快照
@@ -108,4 +119,30 @@ export interface CloudWindow {
   windowNumber: string; // 窗口号
   goldBalance: number; // 窗口哈佛币余额
   userId: string | null; // 使用人 (staffId)，null 表示空闲
+}
+
+
+// 窗口申请
+export interface WindowRequest {
+  id: string;
+  staffId: string;
+  staffName: string;
+  type: 'apply' | 'release'; // 申请类型：申请新窗口 | 释放窗口
+  windowId?: string; // 释放时指定窗口ID
+  status: 'pending' | 'approved' | 'rejected'; // 状态
+  createdAt: string;
+  processedAt?: string;
+  processedBy?: string; // 处理人（管理员ID）
+  note?: string; // 备注
+}
+
+// 窗口充值记录
+export interface WindowRecharge {
+  id: string;
+  windowId: string;
+  amount: number; // 充值金额
+  balanceBefore: number; // 充值前余额
+  balanceAfter: number; // 充值后余额
+  createdAt: string;
+  createdBy: string; // 操作人
 }

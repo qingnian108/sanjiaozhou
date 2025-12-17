@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../cloudbase';
-import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult } from '../types';
+import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest, WindowRecharge } from '../types';
 
 const DEFAULT_SETTINGS: Settings = {
   employeeCostRate: 12,
@@ -22,6 +22,7 @@ export function useFirestore(tenantId: string | null) {
   const [kookChannels, setKookChannels] = useState<KookChannel[]>([]);
   const [cloudMachines, setCloudMachines] = useState<CloudMachine[]>([]);
   const [cloudWindows, setCloudWindows] = useState<CloudWindow[]>([]);
+  const [windowRequests, setWindowRequests] = useState<WindowRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 加载数据的函数 - 按 tenantId 过滤
@@ -35,14 +36,15 @@ export function useFirestore(tenantId: string | null) {
     
     try {
       console.log('Starting data fetch...');
-      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes] = await Promise.all([
+      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes, requestsRes] = await Promise.all([
         db.collection('purchases').where({ tenantId }).get(),
         db.collection('orders').where({ tenantId }).get(),
         db.collection('staff').where({ tenantId }).get(),
         db.collection('config').doc(`settings_${tenantId}`).get(),
         db.collection('kookChannels').where({ tenantId }).get(),
         db.collection('cloudMachines').where({ tenantId }).get(),
-        db.collection('cloudWindows').where({ tenantId }).get()
+        db.collection('cloudWindows').where({ tenantId }).get(),
+        db.collection('windowRequests').where({ tenantId }).get()
       ]);
       console.log('Data fetch complete');
 
@@ -55,6 +57,7 @@ export function useFirestore(tenantId: string | null) {
       setKookChannels(kookRes.data.map((d: any) => ({ id: d._id, ...d })));
       setCloudMachines(machinesRes.data.map((d: any) => ({ id: d._id, ...d })));
       setCloudWindows(windowsRes.data.map((d: any) => ({ id: d._id, ...d })));
+      setWindowRequests(requestsRes.data.map((d: any) => ({ id: d._id, ...d })));
       
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings(settingsRes.data[0] as Settings);
@@ -214,6 +217,90 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  // 暂停订单
+  const pauseOrder = async (orderId: string, completedAmount: number) => {
+    await db.collection('orders').doc(orderId).update({
+      status: 'paused',
+      completedAmount
+    });
+    await loadData();
+  };
+
+  // 恢复订单（给原员工或转派给其他员工）
+  const resumeOrder = async (orderId: string, newStaffId?: string) => {
+    const updateData: any = { status: 'pending' };
+    if (newStaffId) {
+      updateData.staffId = newStaffId;
+    }
+    await db.collection('orders').doc(orderId).update(updateData);
+    await loadData();
+  };
+
+  // 员工申请窗口
+  const createWindowRequest = async (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => {
+    if (!tenantId) return;
+    const id = generateId();
+    await db.collection('windowRequests').doc(id).set({
+      staffId,
+      staffName,
+      type,
+      windowId,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      tenantId
+    });
+    await loadData();
+  };
+
+  // 管理员审批窗口申请
+  const processWindowRequest = async (requestId: string, approved: boolean, adminId: string, windowId?: string) => {
+    const request = windowRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    await db.collection('windowRequests').doc(requestId).update({
+      status: approved ? 'approved' : 'rejected',
+      processedAt: new Date().toISOString(),
+      processedBy: adminId
+    });
+
+    if (approved) {
+      if (request.type === 'apply' && windowId) {
+        // 分配窗口给员工
+        await db.collection('cloudWindows').doc(windowId).update({ userId: request.staffId });
+      } else if (request.type === 'release' && request.windowId) {
+        // 释放窗口
+        await db.collection('cloudWindows').doc(request.windowId).update({ userId: null });
+      }
+    }
+    await loadData();
+  };
+
+  // 窗口充值（带记录）
+  const rechargeWindow = async (windowId: string, amount: number, operatorId: string) => {
+    if (!tenantId) return;
+    const window = cloudWindows.find(w => w.id === windowId);
+    if (!window) return;
+
+    const balanceBefore = window.goldBalance;
+    const balanceAfter = balanceBefore + amount;
+
+    // 更新窗口余额
+    await db.collection('cloudWindows').doc(windowId).update({ goldBalance: balanceAfter });
+
+    // 记录充值历史
+    const id = generateId();
+    await db.collection('windowRecharges').doc(id).set({
+      windowId,
+      amount,
+      balanceBefore,
+      balanceAfter,
+      createdAt: new Date().toISOString(),
+      createdBy: operatorId,
+      tenantId
+    });
+    await loadData();
+  };
+
   return {
     purchases,
     orders,
@@ -222,6 +309,7 @@ export function useFirestore(tenantId: string | null) {
     kookChannels,
     cloudMachines,
     cloudWindows,
+    windowRequests,
     loading,
     addPurchase,
     addOrder,
@@ -239,6 +327,11 @@ export function useFirestore(tenantId: string | null) {
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
+    pauseOrder,
+    resumeOrder,
+    createWindowRequest,
+    processWindowRequest,
+    rechargeWindow,
     refreshData: loadData
   };
 }
