@@ -156,6 +156,31 @@ export function useAuth() {
     return id;
   };
 
+  // 修改密码
+  const changePassword = async (username: string, oldPassword: string, newPassword: string) => {
+    try {
+      await signInAnonymously();
+      
+      const res = await db.collection('staff').where({ username }).get();
+      if (!res.data || res.data.length === 0) {
+        throw new Error('用户名不存在');
+      }
+      
+      const userData = res.data[0];
+      if (userData.password !== oldPassword) {
+        throw new Error('原密码错误');
+      }
+      
+      // 更新密码
+      await db.collection('staff').doc(userData._id).update({ password: newPassword });
+      
+      return true;
+    } catch (error: any) {
+      console.error('修改密码失败:', error);
+      throw error;
+    }
+  };
+
   const getTenantId = () => {
     console.log('getTenantId called, staffInfo:', staffInfo);
     return staffInfo?.tenantId || null;
@@ -169,6 +194,7 @@ export function useAuth() {
     registerAdmin,
     logout,
     createStaffAccount,
+    changePassword,
     getTenantId,
     isAdmin: staffInfo?.role === 'admin',
     isStaff: staffInfo?.role === 'staff'

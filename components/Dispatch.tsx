@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight } from 'lucide-react';
-import { GlassCard, CyberInput, SectionHeader } from './CyberUI';
+import { GlassCard, CyberInput, SectionHeader, useCyberModal } from './CyberUI';
 import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot } from '../types';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
 
@@ -14,7 +14,7 @@ interface Props {
   onAddWindow: (window: Omit<CloudWindow, 'id'>) => void;
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
-  onResumeOrder: (orderId: string, newStaffId?: string) => void;
+  onResumeOrder: (orderId: string, newStaffId?: string) => Promise<boolean>;
 }
 
 export const Dispatch: React.FC<Props> = ({ 
@@ -35,8 +35,7 @@ export const Dispatch: React.FC<Props> = ({
     date: today,
     staffId: '',
     amount: '',
-    feePercent: settings.defaultFeePercent.toString(),
-    unitPrice: settings.orderUnitPrice.toString()
+    totalPrice: '' // 总价（元）
   });
 
   // 选中的窗口ID列表
@@ -61,17 +60,31 @@ export const Dispatch: React.FC<Props> = ({
   };
 
   // 恢复订单给原员工
-  const handleResumeToOriginal = (orderId: string) => {
-    onResumeOrder(orderId);
+  const handleResumeToOriginal = async (orderId: string) => {
+    console.log('handleResumeToOriginal called with orderId:', orderId);
+    const success = await onResumeOrder(orderId);
+    if (success) {
+      showSuccess('操作成功', '订单已恢复，员工可继续处理');
+    } else {
+      showAlert('操作失败', '恢复订单失败，请重试');
+    }
   };
 
   // 转派订单给其他员工
-  const handleTransferOrder = () => {
+  const handleTransferOrder = async () => {
     if (!transferOrderId || !transferStaffId) return;
-    onResumeOrder(transferOrderId, transferStaffId);
+    const success = await onResumeOrder(transferOrderId, transferStaffId);
+    if (success) {
+      showSuccess('操作成功', '订单已转派给新员工');
+    } else {
+      showAlert('操作失败', '转派订单失败，请重试');
+    }
     setTransferOrderId(null);
     setTransferStaffId('');
   };
+
+  const { showAlert, showSuccess, ModalComponent } = useCyberModal();
+  const [deleteWindowId, setDeleteWindowId] = useState<string | null>(null);
 
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
   
@@ -106,7 +119,7 @@ export const Dispatch: React.FC<Props> = ({
   const handleAssignFreeWindow = (windowId: string) => {
     const currentCount = getStaffWindows(orderForm.staffId).length;
     if (currentCount >= 4) {
-      alert('该员工已有4个窗口，无法继续添加');
+      showAlert('无法添加', '该员工已有4个窗口，无法继续添加');
       return;
     }
     onAssignWindow(windowId, orderForm.staffId);
@@ -115,9 +128,15 @@ export const Dispatch: React.FC<Props> = ({
   // 删除窗口
   const handleDeleteWindow = (windowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('确认删除该窗口？')) {
-      onDeleteWindow(windowId);
-      setSelectedWindowIds(selectedWindowIds.filter(id => id !== windowId));
+    setDeleteWindowId(windowId);
+  };
+
+  // 确认删除窗口
+  const confirmDeleteWindow = () => {
+    if (deleteWindowId) {
+      onDeleteWindow(deleteWindowId);
+      setSelectedWindowIds(selectedWindowIds.filter(id => id !== deleteWindowId));
+      setDeleteWindowId(null);
     }
   };
 
@@ -131,12 +150,12 @@ export const Dispatch: React.FC<Props> = ({
   const handleOrderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderForm.staffId) {
-      alert("请选择一名员工");
+      showAlert("请选择员工", "请选择一名员工");
       return;
     }
     
     if (selectedWindowIds.length === 0) {
-      alert("请至少选择一个窗口");
+      showAlert("请选择窗口", "请至少选择一个窗口");
       return;
     }
 
@@ -149,19 +168,24 @@ export const Dispatch: React.FC<Props> = ({
       startBalance: w.goldBalance
     }));
 
+    const amount = parseFloat(orderForm.amount);
+    const totalPrice = parseFloat(orderForm.totalPrice);
+    // 自动计算单价：总价 / (金额/1000) = 元/千万
+    const unitPrice = totalPrice / (amount / 1000);
+
     onAddOrder({
       date: orderForm.date,
       staffId: orderForm.staffId,
-      amount: parseFloat(orderForm.amount),
+      amount,
       loss: 0,
-      feePercent: parseFloat(orderForm.feePercent),
-      unitPrice: parseFloat(orderForm.unitPrice),
+      feePercent: settings.defaultFeePercent, // 使用设置中的手续费
+      unitPrice: isNaN(unitPrice) ? settings.orderUnitPrice : unitPrice,
       status: 'pending'
     }, windowSnapshots);
     
-    setOrderForm({ ...orderForm, amount: '' });
+    setOrderForm({ ...orderForm, amount: '', totalPrice: '' });
     setSelectedWindowIds([]);
-    alert("订单已派发，员工可在员工端完成订单");
+    showSuccess("派单成功", "订单已派发，员工可在员工端完成订单");
   };
 
   const staffWindows = orderForm.staffId ? getStaffWindows(orderForm.staffId) : [];
@@ -201,14 +225,16 @@ export const Dispatch: React.FC<Props> = ({
                   </div>
                   <div className="flex gap-2">
                     <button
+                      type="button"
                       onClick={() => handleResumeToOriginal(order.id)}
-                      className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30 flex items-center gap-1"
+                      className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30 active:bg-green-500/50 flex items-center gap-1 cursor-pointer"
                     >
                       <Play size={14} /> 恢复
                     </button>
                     <button
+                      type="button"
                       onClick={() => setTransferOrderId(order.id)}
-                      className="px-3 py-1 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm hover:bg-cyber-primary/30 flex items-center gap-1"
+                      className="px-3 py-1 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm hover:bg-cyber-primary/30 active:bg-cyber-primary/50 flex items-center gap-1 cursor-pointer"
                     >
                       <ArrowRight size={14} /> 转派
                     </button>
@@ -254,7 +280,7 @@ export const Dispatch: React.FC<Props> = ({
         
         <form onSubmit={handleOrderSubmit} className="relative z-10 space-y-6">
           {/* 基本信息 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <CyberInput
               label="日期"
               type="date"
@@ -271,19 +297,23 @@ export const Dispatch: React.FC<Props> = ({
               required
             />
             <CyberInput
-              label="手续费 %"
-              type="number"
-              step="0.1"
-              value={orderForm.feePercent}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, feePercent: e.target.value})}
-            />
-            <CyberInput
-              label="单价 (元/千万)"
+              label="订单总价 (元)"
               type="number"
               step="0.01"
-              value={orderForm.unitPrice}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, unitPrice: e.target.value})}
+              value={orderForm.totalPrice}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, totalPrice: e.target.value})}
+              placeholder="输入总价"
+              required
             />
+            {/* 自动计算的单价（只读） */}
+            <div>
+              <label className="block text-cyber-primary text-xs font-mono mb-2 uppercase tracking-wider">{`> 单价 (元/千万)`}</label>
+              <div className="bg-black/40 border border-cyber-primary/30 text-cyber-accent font-mono px-3 py-2 h-[42px] flex items-center">
+                {orderForm.amount && orderForm.totalPrice 
+                  ? (parseFloat(orderForm.totalPrice) / (parseFloat(orderForm.amount) / 1000)).toFixed(2)
+                  : '--'}
+              </div>
+            </div>
           </div>
 
           {/* 员工选择 */}
@@ -378,34 +408,17 @@ export const Dispatch: React.FC<Props> = ({
                     return (
                       <div
                         key={window.id}
-                        onClick={() => toggleWindow(window.id)}
-                        className={`p-3 border-2 rounded cursor-pointer transition-all relative group ${
+                        className={`p-3 border-2 rounded transition-all relative group ${
                           isSelected
                             ? 'border-green-500 bg-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.3)]'
                             : 'border-gray-600 bg-black/30 hover:border-gray-500'
                         }`}
                       >
-                        {/* 操作按钮 */}
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={(e) => handleReleaseWindow(window.id, e)}
-                            className="p-1 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/40 rounded text-xs"
-                            title="释放窗口"
-                          >
-                            释放
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteWindow(window.id, e)}
-                            className="p-1 bg-red-500/20 text-red-400 hover:bg-red-500/40 rounded"
-                            title="删除窗口"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between mb-2">
+                        {/* 顶部：窗口号和选择框 */}
+                        <div 
+                          className="flex items-center justify-between mb-2 cursor-pointer"
+                          onClick={() => toggleWindow(window.id)}
+                        >
                           <span className="font-mono text-sm">#{window.windowNumber}</span>
                           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                             isSelected ? 'border-green-500 bg-green-500' : 'border-gray-500'
@@ -413,8 +426,31 @@ export const Dispatch: React.FC<Props> = ({
                             {isSelected && <Check size={14} className="text-black" />}
                           </div>
                         </div>
-                        <div className="text-xs text-gray-400 mb-1">{getMachineName(window.machineId)}</div>
-                        <div className="text-cyber-accent font-mono">{formatWan(window.goldBalance)}</div>
+                        {/* 中间：云机信息和余额 */}
+                        <div 
+                          className="cursor-pointer"
+                          onClick={() => toggleWindow(window.id)}
+                        >
+                          <div className="text-xs text-gray-400 mb-1">{getMachineName(window.machineId)}</div>
+                          <div className="text-cyber-accent font-mono mb-3">{formatWan(window.goldBalance)}</div>
+                        </div>
+                        {/* 底部：操作按钮 - 居中显示 */}
+                        <div className="flex justify-center gap-2 pt-2 border-t border-gray-700">
+                          <button
+                            type="button"
+                            onClick={(e) => handleReleaseWindow(window.id, e)}
+                            className="px-3 py-1 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/40 rounded text-xs border border-yellow-500/50"
+                          >
+                            释放
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteWindow(window.id, e)}
+                            className="px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/40 rounded border border-red-500/50"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -468,6 +504,28 @@ export const Dispatch: React.FC<Props> = ({
           </div>
         </form>
       </GlassCard>
+
+      {/* 删除窗口确认弹窗 */}
+      {deleteWindowId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-cyber-panel border border-red-500 p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 border border-red-500 flex items-center justify-center text-red-400 font-mono text-lg">!</div>
+              <h3 className="text-xl font-mono text-red-400 tracking-wider">确认删除</h3>
+            </div>
+            <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">确认删除该窗口？此操作不可恢复。</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteWindowId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+              <button onClick={confirmDeleteWindow} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 通用弹窗 */}
+      <ModalComponent />
     </div>
   );
 };

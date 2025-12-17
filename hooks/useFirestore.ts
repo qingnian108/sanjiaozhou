@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../cloudbase';
-import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest, WindowRecharge } from '../types';
+import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest } from '../types';
 
 const DEFAULT_SETTINGS: Settings = {
   employeeCostRate: 12,
@@ -8,11 +8,6 @@ const DEFAULT_SETTINGS: Settings = {
   defaultFeePercent: 7,
   initialCapital: 10000
 };
-
-// 扩展类型，添加 tenantId
-interface TenantData {
-  tenantId: string;
-}
 
 export function useFirestore(tenantId: string | null) {
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
@@ -25,17 +20,40 @@ export function useFirestore(tenantId: string | null) {
   const [windowRequests, setWindowRequests] = useState<WindowRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const generateId = () => crypto.randomUUID();
+
+  // 通用更新函数
+  const updateDocument = async (collection: string, id: string, data: any) => {
+    try {
+      console.log(`=== updateDocument: ${collection}/${id} ===`);
+      console.log('Update data:', data);
+      
+      // 清理数据
+      const cleanData: any = {};
+      for (const key of Object.keys(data)) {
+        if (!key.startsWith('_') && key !== 'id') {
+          cleanData[key] = data[key];
+        }
+      }
+      
+      // 使用 doc().update()
+      const result = await db.collection(collection).doc(id).update(cleanData);
+      console.log('Update result:', result);
+      return result;
+    } catch (error) {
+      console.error(`Update error:`, error);
+      return { updated: 0, error };
+    }
+  };
+
   // 加载数据的函数 - 按 tenantId 过滤
   const loadData = async () => {
-    console.log('loadData called, tenantId:', tenantId);
     if (!tenantId) {
-      console.log('No tenantId, skipping load');
       setLoading(false);
       return;
     }
     
     try {
-      console.log('Starting data fetch...');
       const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes, requestsRes] = await Promise.all([
         db.collection('purchases').where({ tenantId }).get(),
         db.collection('orders').where({ tenantId }).get(),
@@ -46,43 +64,33 @@ export function useFirestore(tenantId: string | null) {
         db.collection('cloudWindows').where({ tenantId }).get(),
         db.collection('windowRequests').where({ tenantId }).get()
       ]);
-      console.log('Data fetch complete');
 
-      console.log('Staff data from DB:', staffRes.data);
-      setPurchases(purchasesRes.data.map((d: any) => ({ id: d._id, ...d })));
-      setOrders(ordersRes.data.map((d: any) => ({ id: d._id, ...d })));
-      const staffData = staffRes.data.map((d: any) => ({ id: d._id, ...d }));
-      console.log('Processed staff data:', staffData);
-      setStaffList(staffData);
-      setKookChannels(kookRes.data.map((d: any) => ({ id: d._id, ...d })));
-      setCloudMachines(machinesRes.data.map((d: any) => ({ id: d._id, ...d })));
-      setCloudWindows(windowsRes.data.map((d: any) => ({ id: d._id, ...d })));
-      setWindowRequests(requestsRes.data.map((d: any) => ({ id: d._id, ...d })));
+      setPurchases((purchasesRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setOrders((ordersRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setStaffList((staffRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setKookChannels((kookRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setCloudMachines((machinesRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setCloudWindows((windowsRes.data || []).map((d: any) => ({ id: d._id, ...d })));
+      setWindowRequests((requestsRes.data || []).map((d: any) => ({ id: d._id, ...d })));
       
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings(settingsRes.data[0] as Settings);
       }
-      console.log('State updated');
     } catch (error) {
       console.error('Load data failed:', error);
     }
     setLoading(false);
-    console.log('Loading set to false');
   };
 
   useEffect(() => {
-    console.log('useFirestore useEffect triggered, tenantId:', tenantId);
     if (tenantId) {
       loadData();
     } else {
-      console.log('No tenantId, setting loading to false');
       setLoading(false);
     }
   }, [tenantId]);
 
-  const generateId = () => crypto.randomUUID();
-
-  // Add purchase - 带 tenantId
+  // Add purchase
   const addPurchase = async (record: Omit<PurchaseRecord, 'id'>) => {
     if (!tenantId) return;
     const id = generateId();
@@ -90,12 +98,13 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  // Add order - 带 tenantId
+  // Add order
   const addOrder = async (record: Omit<OrderRecord, 'id'>, windowSnapshots: WindowSnapshot[]) => {
     if (!tenantId) return;
     const id = generateId();
     await db.collection('orders').doc(id).set({
       ...record,
+      id, // 保存 id 字段用于后续更新
       status: 'pending',
       windowSnapshots,
       tenantId
@@ -103,23 +112,44 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  // Complete order
+  // Complete order - 记录最后执行者的执行历史
   const completeOrder = async (orderId: string, windowResults: WindowResult[]) => {
-    const order = orders.find(o => o.id === orderId);
+    const order = orders.find((o: OrderRecord) => o.id === orderId);
     if (!order || !order.windowSnapshots) return;
 
     const totalConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
     const loss = totalConsumed - order.amount;
 
-    await db.collection('orders').doc(orderId).update({
+    // 获取当前员工信息
+    const currentStaff = staffList.find(s => s.id === order.staffId);
+    const staffName = currentStaff?.name || '未知';
+
+    // 计算本次执行的金额
+    const previousCompleted = order.executionHistory?.reduce((sum, e) => sum + e.amount, 0) || 0;
+    const thisExecutionAmount = order.amount - previousCompleted;
+
+    // 添加最后执行记录（如果有剩余金额）
+    let executionHistory = order.executionHistory || [];
+    if (thisExecutionAmount > 0) {
+      executionHistory = [...executionHistory, {
+        staffId: order.staffId,
+        staffName,
+        amount: thisExecutionAmount,
+        startTime: order.executionHistory?.length ? new Date().toISOString() : order.date,
+        endTime: new Date().toISOString()
+      }];
+    }
+
+    await updateDocument('orders', orderId, {
       status: 'completed',
       windowResults,
       totalConsumed,
-      loss: loss > 0 ? loss : 0
+      loss: loss > 0 ? loss : 0,
+      executionHistory
     });
 
     for (const result of windowResults) {
-      await db.collection('cloudWindows').doc(result.windowId).update({
+      await updateDocument('cloudWindows', result.windowId, {
         goldBalance: result.endBalance
       });
     }
@@ -140,25 +170,22 @@ export function useFirestore(tenantId: string | null) {
 
   // Delete staff
   const deleteStaff = async (id: string) => {
-    console.log('deleteStaff called with id:', id);
     try {
-      const result = await db.collection('staff').doc(id).remove();
-      console.log('Delete result:', result);
+      await db.collection('staff').doc(id).remove();
       await loadData();
-      console.log('Data reloaded after delete');
     } catch (error) {
       console.error('Delete staff failed:', error);
     }
   };
 
-  // Save settings - 按 tenantId 保存
+  // Save settings
   const saveSettings = async (newSettings: Settings) => {
     if (!tenantId) return;
     await db.collection('config').doc(`settings_${tenantId}`).set({ ...newSettings, tenantId });
     setSettings(newSettings);
   };
 
-  // Kook Channels - 带 tenantId
+  // Kook Channels
   const addKookChannel = async (channel: Omit<KookChannel, 'id'>) => {
     if (!tenantId) return;
     const id = generateId();
@@ -171,7 +198,7 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  // Cloud Machines - 带 tenantId
+  // Cloud Machines
   const addCloudMachine = async (machine: Omit<CloudMachine, 'id'>) => {
     if (!tenantId) return '';
     const id = generateId();
@@ -182,7 +209,7 @@ export function useFirestore(tenantId: string | null) {
 
   const deleteCloudMachine = async (id: string) => {
     await db.collection('cloudMachines').doc(id).remove();
-    const windows = cloudWindows.filter(w => w.machineId === id);
+    const windows = cloudWindows.filter((w: CloudWindow) => w.machineId === id);
     for (const w of windows) {
       await db.collection('cloudWindows').doc(w.id).remove();
     }
@@ -190,11 +217,11 @@ export function useFirestore(tenantId: string | null) {
   };
 
   const updateCloudMachine = async (id: string, data: Partial<CloudMachine>) => {
-    await db.collection('cloudMachines').doc(id).update(data);
+    await updateDocument('cloudMachines', id, data);
     await loadData();
   };
 
-  // Cloud Windows - 带 tenantId
+  // Cloud Windows
   const addCloudWindow = async (window: Omit<CloudWindow, 'id'>) => {
     if (!tenantId) return;
     const id = generateId();
@@ -208,86 +235,155 @@ export function useFirestore(tenantId: string | null) {
   };
 
   const assignWindow = async (windowId: string, userId: string | null) => {
-    await db.collection('cloudWindows').doc(windowId).update({ userId });
+    await updateDocument('cloudWindows', windowId, { userId });
     await loadData();
   };
 
   const updateWindowGold = async (windowId: string, goldBalance: number) => {
-    await db.collection('cloudWindows').doc(windowId).update({ goldBalance });
+    await updateDocument('cloudWindows', windowId, { goldBalance });
     await loadData();
   };
 
-  // 暂停订单
-  const pauseOrder = async (orderId: string, completedAmount: number) => {
-    await db.collection('orders').doc(orderId).update({
-      status: 'paused',
-      completedAmount
-    });
-    await loadData();
-  };
-
-  // 恢复订单（给原员工或转派给其他员工）
-  const resumeOrder = async (orderId: string, newStaffId?: string) => {
-    const updateData: any = { status: 'pending' };
-    if (newStaffId) {
-      updateData.staffId = newStaffId;
+  // 暂停订单 - 记录当前员工的执行历史
+  const pauseOrder = async (orderId: string, completedAmount: number): Promise<boolean> => {
+    console.log('=== pauseOrder START ===');
+    console.log('orderId:', orderId, 'completedAmount:', completedAmount);
+    
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+      console.error('Order not found');
+      return false;
     }
-    await db.collection('orders').doc(orderId).update(updateData);
-    await loadData();
+    
+    // 获取当前员工信息
+    const currentStaff = staffList.find(s => s.id === order.staffId);
+    const staffName = currentStaff?.name || '未知';
+    
+    // 计算本次执行的金额（当前完成 - 之前已完成）
+    const previousCompleted = order.executionHistory?.reduce((sum, e) => sum + e.amount, 0) || 0;
+    const thisExecutionAmount = completedAmount - previousCompleted;
+    
+    // 添加执行记录
+    const newExecution = {
+      staffId: order.staffId,
+      staffName,
+      amount: thisExecutionAmount > 0 ? thisExecutionAmount : completedAmount,
+      startTime: order.executionHistory?.length ? new Date().toISOString() : order.date,
+      endTime: new Date().toISOString()
+    };
+    
+    const executionHistory = [...(order.executionHistory || []), newExecution];
+    
+    try {
+      const result = await updateDocument('orders', orderId, {
+        status: 'paused',
+        completedAmount,
+        executionHistory
+      });
+      console.log('Pause order result:', result);
+      
+      if (result.updated > 0) {
+        await loadData();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('pauseOrder error:', error);
+      return false;
+    }
+  };
+
+  // 恢复订单 - 转派时更新 staffId，保留执行历史
+  const resumeOrder = async (orderId: string, newStaffId?: string): Promise<boolean> => {
+    console.log('=== resumeOrder START ===');
+    console.log('orderId:', orderId, 'newStaffId:', newStaffId);
+    
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+      console.error('Order not found');
+      return false;
+    }
+    
+    const updateData: any = { status: 'pending' };
+    
+    // 如果转派给新员工
+    if (newStaffId && newStaffId !== order.staffId) {
+      updateData.staffId = newStaffId;
+      // 剩余金额 = 总金额 - 已完成金额
+      updateData.remainingAmount = order.amount - (order.completedAmount || 0);
+    }
+    
+    try {
+      const result = await updateDocument('orders', orderId, updateData);
+      console.log('Resume order result:', result);
+      
+      if (result.updated > 0) {
+        await loadData();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('resumeOrder error:', error);
+      return false;
+    }
   };
 
   // 员工申请窗口
   const createWindowRequest = async (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => {
     if (!tenantId) return;
     const id = generateId();
-    await db.collection('windowRequests').doc(id).set({
-      staffId,
-      staffName,
-      type,
-      windowId,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      tenantId
-    });
-    await loadData();
+    console.log('=== createWindowRequest ===');
+    console.log('staffId:', staffId, 'staffName:', staffName, 'type:', type, 'windowId:', windowId);
+    try {
+      const result = await db.collection('windowRequests').doc(id).set({
+        id, // 保存 id 字段
+        staffId,
+        staffName,
+        type,
+        windowId,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        tenantId
+      });
+      console.log('Create request result:', result);
+      await loadData();
+    } catch (error) {
+      console.error('Create request error:', error);
+    }
   };
 
   // 管理员审批窗口申请
-  const processWindowRequest = async (requestId: string, approved: boolean, adminId: string, windowId?: string) => {
-    const request = windowRequests.find(r => r.id === requestId);
+  const processWindowRequest = async (requestId: string, approved: boolean, adminId: string) => {
+    const request = windowRequests.find((r: WindowRequest) => r.id === requestId);
     if (!request) return;
 
-    await db.collection('windowRequests').doc(requestId).update({
+    await updateDocument('windowRequests', requestId, {
       status: approved ? 'approved' : 'rejected',
       processedAt: new Date().toISOString(),
       processedBy: adminId
     });
 
-    if (approved) {
-      if (request.type === 'apply' && windowId) {
-        // 分配窗口给员工
-        await db.collection('cloudWindows').doc(windowId).update({ userId: request.staffId });
-      } else if (request.type === 'release' && request.windowId) {
-        // 释放窗口
-        await db.collection('cloudWindows').doc(request.windowId).update({ userId: null });
+    if (approved && request.windowId) {
+      if (request.type === 'apply') {
+        await updateDocument('cloudWindows', request.windowId, { userId: request.staffId });
+      } else if (request.type === 'release') {
+        await updateDocument('cloudWindows', request.windowId, { userId: null });
       }
     }
     await loadData();
   };
 
-  // 窗口充值（带记录）
+  // 窗口充值
   const rechargeWindow = async (windowId: string, amount: number, operatorId: string) => {
     if (!tenantId) return;
-    const window = cloudWindows.find(w => w.id === windowId);
+    const window = cloudWindows.find((w: CloudWindow) => w.id === windowId);
     if (!window) return;
 
     const balanceBefore = window.goldBalance;
     const balanceAfter = balanceBefore + amount;
 
-    // 更新窗口余额
-    await db.collection('cloudWindows').doc(windowId).update({ goldBalance: balanceAfter });
+    await updateDocument('cloudWindows', windowId, { goldBalance: balanceAfter });
 
-    // 记录充值历史
     const id = generateId();
     await db.collection('windowRecharges').doc(id).set({
       windowId,

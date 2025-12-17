@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShoppingCart, PlusCircle } from 'lucide-react';
-import { GlassCard, CyberInput, NeonButton, SectionHeader } from './CyberUI';
+import { GlassCard, CyberInput, NeonButton, SectionHeader, useCyberModal } from './CyberUI';
 import { PurchaseRecord } from '../types';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
 
 export const Purchase: React.FC<Props> = ({ onAddPurchase }) => {
   const today = new Date().toISOString().split('T')[0];
+  const { showSuccess, ModalComponent } = useCyberModal();
 
   const [purchaseForm, setPurchaseForm] = useState({
     date: today,
@@ -24,7 +25,7 @@ export const Purchase: React.FC<Props> = ({ onAddPurchase }) => {
       cost: parseFloat(purchaseForm.cost)
     });
     setPurchaseForm({ ...purchaseForm, amount: '', cost: '' });
-    alert("采购记录已添加");
+    showSuccess("添加成功", "采购记录已添加");
   };
 
   return (
@@ -45,7 +46,7 @@ export const Purchase: React.FC<Props> = ({ onAddPurchase }) => {
             />
           </div>
           <CyberInput 
-            label="采购哈佛币 (万)" 
+            label="采购哈夫币 (万)" 
             type="number" 
             step="0.01" 
             placeholder="30000"
@@ -69,6 +70,7 @@ export const Purchase: React.FC<Props> = ({ onAddPurchase }) => {
           </div>
         </form>
       </GlassCard>
+      <ModalComponent />
     </div>
   );
 };

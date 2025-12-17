@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Send, Database, BarChart3, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
 import { useAuth } from './hooks/useAuth';
+import { useCyberModal } from './components/CyberUI';
 
 // Pages
 import { Dashboard } from './components/Dashboard';
@@ -113,21 +114,28 @@ const AdminApp: React.FC<{
     return calculateStats(purchases, orders, settings);
   }, [purchases, orders, settings]);
 
+  // 确认弹窗状态
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  const showConfirmModal = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModal({ isOpen: true, title, message, onConfirm });
+  };
+
   const handleDeletePurchase = async (id: string) => {
-    if (confirm('确认删除该记录？')) {
+    showConfirmModal('确认删除', '确认删除该采购记录？', async () => {
       await deletePurchase(id);
-    }
+    });
   };
 
   const handleDeleteStaff = async (id: string) => {
-    console.log('handleDeleteStaff called with id:', id);
-    if (confirm('确认删除员工？')) {
-      console.log('User confirmed delete');
+    showConfirmModal('确认删除', '确认删除该员工？', async () => {
       await deleteStaff(id);
-      console.log('deleteStaff completed');
-    } else {
-      console.log('User cancelled delete');
-    }
+    });
   };
 
   const handleDeleteOrder = async (id: string) => {
@@ -135,21 +143,21 @@ const AdminApp: React.FC<{
   };
 
   const handleDeleteKookChannel = async (id: string) => {
-    if (confirm('确认删除该Kook频道？')) {
+    showConfirmModal('确认删除', '确认删除该Kook频道？', async () => {
       await deleteKookChannel(id);
-    }
+    });
   };
 
   const handleDeleteCloudMachine = async (id: string) => {
-    if (confirm('确认删除该云机及其所有窗口？')) {
+    showConfirmModal('确认删除', '确认删除该云机及其所有窗口？此操作不可恢复。', async () => {
       await deleteCloudMachine(id);
-    }
+    });
   };
 
   const handleDeleteCloudWindow = async (id: string) => {
-    if (confirm('确认删除该窗口？')) {
+    showConfirmModal('确认删除', '确认删除该窗口？', async () => {
       await deleteCloudWindow(id);
-    }
+    });
   };
 
   if (loading) {
@@ -187,7 +195,7 @@ const AdminApp: React.FC<{
           </header>
 
           <Routes>
-            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} />} />
+            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
@@ -197,6 +205,25 @@ const AdminApp: React.FC<{
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
           </Routes>
         </main>
+
+        {/* 确认弹窗 */}
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-cyber-panel border border-red-500 p-6 max-w-md w-full relative">
+              <div className="absolute top-0 left-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+              <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 border border-red-500 flex items-center justify-center text-red-400 font-mono text-lg">!</div>
+                <h3 className="text-xl font-mono text-red-400 tracking-wider">{confirmModal.title}</h3>
+              </div>
+              <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">{confirmModal.message}</p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+                <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({ ...confirmModal, isOpen: false }); }} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </HashRouter>
   );
@@ -242,7 +269,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
 };
 
 const App: React.FC = () => {
-  const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, isAdmin, getTenantId } = useAuth();
+  const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, changePassword, isAdmin, getTenantId } = useAuth();
 
   const handleLogin = async (username: string, password: string) => {
     await login(username, password);
@@ -262,7 +289,7 @@ const App: React.FC = () => {
 
   // 未登录显示登录页
   if (!user || !staffInfo) {
-    return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} />;
+    return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} onChangePassword={changePassword} />;
   }
 
   if (!staffInfo.tenantId) {

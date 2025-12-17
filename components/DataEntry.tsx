@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PlusCircle, ShoppingCart, Truck } from 'lucide-react';
-import { GlassCard, CyberInput, NeonButton, SectionHeader } from './CyberUI';
+import { GlassCard, CyberInput, NeonButton, SectionHeader, useCyberModal } from './CyberUI';
 import { PurchaseRecord, OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot } from '../types';
 import { formatChineseNumber, formatWan } from '../utils';
 
@@ -23,6 +23,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
 }) => {
   const today = new Date().toISOString().split('T')[0];
   const [activeTab, setActiveTab] = useState<'purchase' | 'order'>('order');
+  const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   const [purchaseForm, setPurchaseForm] = useState({
     date: today,
@@ -57,19 +58,19 @@ export const DataEntry: React.FC<DataEntryProps> = ({
       cost: parseFloat(purchaseForm.cost)
     });
     setPurchaseForm({ ...purchaseForm, amount: '', cost: '' });
-    alert("采购记录已添加");
+    showSuccess("添加成功", "采购记录已添加");
   };
 
   const handleOrderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderForm.staffId) {
-      alert("请选择一名员工");
+      showAlert("请选择员工", "请选择一名员工");
       return;
     }
     
     const staffWindows = getStaffWindows(orderForm.staffId);
     if (staffWindows.length === 0) {
-      alert("该员工没有分配窗口，无法创建订单");
+      showAlert("无法创建", "该员工没有分配窗口，无法创建订单");
       return;
     }
 
@@ -93,7 +94,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
     }, windowSnapshots);
     
     setOrderForm({ ...orderForm, amount: '' });
-    alert("订单已创建，员工可在员工端完成订单");
+    showSuccess("创建成功", "订单已创建，员工可在员工端完成订单");
   };
 
   // 获取选中员工的窗口信息
@@ -177,7 +178,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
                 onChange={(e: any) => setOrderForm({...orderForm, date: e.target.value})} required />
               <CyberInput label="订单单价 (元/千万)" type="number" step="0.01" value={orderForm.unitPrice} 
                 onChange={(e: any) => setOrderForm({...orderForm, unitPrice: e.target.value})} required />
-              <CyberInput label="订单金额 (万哈佛币)" type="number" step="0.01" placeholder="26000" value={orderForm.amount} 
+              <CyberInput label="订单金额 (万哈夫币)" type="number" step="0.01" placeholder="26000" value={orderForm.amount} 
                 onChange={(e: any) => setOrderForm({...orderForm, amount: e.target.value})} required />
               <CyberInput label="手续费 (%)" type="number" step="0.1" value={orderForm.feePercent} 
                 onChange={(e: any) => setOrderForm({...orderForm, feePercent: e.target.value})} required />
@@ -203,7 +204,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
               <CyberInput label="采购日期" type="date" value={purchaseForm.date} 
                 onChange={(e: any) => setPurchaseForm({...purchaseForm, date: e.target.value})} required />
             </div>
-            <CyberInput label="采购哈佛币 (万)" type="number" step="0.01" placeholder="30000" value={purchaseForm.amount} 
+            <CyberInput label="采购哈夫币 (万)" type="number" step="0.01" placeholder="30000" value={purchaseForm.amount} 
               onChange={(e: any) => setPurchaseForm({...purchaseForm, amount: e.target.value})} required />
             <CyberInput label="总成本 (元)" type="number" step="0.01" placeholder="600" value={purchaseForm.cost} 
               onChange={(e: any) => setPurchaseForm({...purchaseForm, cost: e.target.value})} required />
@@ -215,6 +216,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
           </form>
         </GlassCard>
       )}
+      <ModalComponent />
     </div>
   );
 };

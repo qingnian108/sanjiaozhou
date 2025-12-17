@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Users, UserPlus, Trash2, Search, Crosshair } from 'lucide-react';
-import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox } from './CyberUI';
+import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, useCyberModal } from './CyberUI';
 import { Staff, OrderRecord, Settings } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
 
@@ -22,6 +22,8 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+  const { ModalComponent } = useCyberModal();
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,7 +218,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                             <td className="p-3 text-gray-500">{r.feePercent}%</td>
                             <td className="p-3 text-right">
                               <button 
-                                onClick={() => { if(confirm('确认删除该订单？')) onDeleteOrder(r.id); }}
+                                onClick={() => setDeleteOrderId(r.id)}
                                 className="text-gray-600 hover:text-red-500 transition-colors p-1"
                               >
                                 <Trash2 size={14} />
@@ -240,6 +242,27 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
           )}
         </div>
       </div>
+
+      {/* 删除订单确认弹窗 */}
+      {deleteOrderId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-cyber-panel border border-red-500 p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 border border-red-500 flex items-center justify-center text-red-400 font-mono text-lg">!</div>
+              <h3 className="text-xl font-mono text-red-400 tracking-wider">确认删除</h3>
+            </div>
+            <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">确认删除该订单？此操作不可恢复。</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+              <button onClick={() => { onDeleteOrder(deleteOrderId); setDeleteOrderId(null); }} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ModalComponent />
     </div>
   );
 };

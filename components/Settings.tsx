@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Settings as SettingsIcon, Save } from 'lucide-react';
-import { GlassCard, SectionHeader, CyberInput, NeonButton } from './CyberUI';
+import { GlassCard, SectionHeader, CyberInput, NeonButton, useCyberModal } from './CyberUI';
 import { Settings as SettingsType } from '../types';
 
 interface SettingsProps {
@@ -10,11 +10,12 @@ interface SettingsProps {
 
 export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave }) => {
   const [form, setForm] = useState(settings);
+  const { showSuccess, ModalComponent } = useCyberModal();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(form);
-    alert("系统配置已更新。");
+    showSuccess("保存成功", "系统配置已更新");
   };
 
   return (
@@ -24,18 +25,11 @@ export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave }) => {
       <GlassCard>
         <form onSubmit={handleSubmit} className="space-y-4">
            <CyberInput 
-              label="员工成本 (元/千万哈佛币)" 
+              label="员工成本 (元/千万哈夫币)" 
               type="number"
               step="0.01"
               value={form.employeeCostRate} 
               onChange={(e: any) => setForm({...form, employeeCostRate: parseFloat(e.target.value)})} 
-            />
-            <CyberInput 
-              label="默认订单单价 (元/千万哈佛币)" 
-              type="number"
-              step="0.01"
-              value={form.orderUnitPrice} 
-              onChange={(e: any) => setForm({...form, orderUnitPrice: parseFloat(e.target.value)})} 
             />
              <CyberInput 
               label="默认手续费 (%)" 
@@ -59,6 +53,7 @@ export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave }) => {
             </div>
         </form>
       </GlassCard>
+      <ModalComponent />
     </div>
   );
 };

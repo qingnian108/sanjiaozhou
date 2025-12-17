@@ -110,14 +110,36 @@ export const calculateStats = (
 
 export const calculateStaffStats = (orders: OrderRecord[], staffList: Staff[], settings: Settings): StaffStats[] => {
   return staffList.map(staff => {
-    const staffOrders = orders.filter(o => o.staffId === staff.id);
-    const totalAmount = staffOrders.reduce((sum, o) => sum + o.amount, 0);
-    const totalLoss = staffOrders.reduce((sum, o) => sum + o.loss, 0);
+    let totalAmount = 0;
+    let totalLoss = 0;
+    let orderCount = 0;
+
+    orders.forEach(order => {
+      // 检查执行历史中是否有该员工的记录
+      if (order.executionHistory && order.executionHistory.length > 0) {
+        // 有执行历史，按历史记录计算
+        const staffExecutions = order.executionHistory.filter(e => e.staffId === staff.id);
+        if (staffExecutions.length > 0) {
+          orderCount++;
+          const staffAmount = staffExecutions.reduce((sum, e) => sum + e.amount, 0);
+          totalAmount += staffAmount;
+          // 损耗按比例分配
+          const ratio = staffAmount / order.amount;
+          totalLoss += order.loss * ratio;
+        }
+      } else if (order.staffId === staff.id) {
+        // 没有执行历史，使用原逻辑
+        orderCount++;
+        totalAmount += order.amount;
+        totalLoss += order.loss;
+      }
+    });
+
     const totalLaborCostEarned = (totalAmount / 1000) * settings.employeeCostRate;
 
     return {
       staff,
-      totalOrders: staffOrders.length,
+      totalOrders: orderCount,
       totalAmount,
       totalLoss,
       totalLaborCostEarned
@@ -148,7 +170,7 @@ export const formatChineseNumber = (num: number): string => {
   return result.join('');
 };
 
-// 哈佛币转万：显示时除以10000，带"万"单位
+// 哈夫币转万：显示时除以10000，带"万"单位
 export const formatWan = (num: number): string => {
   const wan = num / 10000;
   // 如果是整数就不显示小数，否则保留2位
@@ -156,7 +178,7 @@ export const formatWan = (num: number): string => {
   return `${formatChineseNumber(parseFloat(formatted))} 万`;
 };
 
-// 哈佛币转万（只返回数字，不带单位）
+// 哈夫币转万（只返回数字，不带单位）
 export const toWan = (num: number): string => {
   const wan = num / 10000;
   const formatted = wan % 1 === 0 ? wan.toString() : wan.toFixed(2);

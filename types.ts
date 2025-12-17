@@ -46,13 +46,13 @@ export interface WindowSnapshot {
   machineId: string;
   windowNumber: string;
   machineName: string; // 云机名称（手机号+平台）
-  startBalance: number; // 开始时哈佛币
+  startBalance: number; // 开始时哈夫币
 }
 
 // 订单结束时的窗口结果
 export interface WindowResult {
   windowId: string;
-  endBalance: number; // 结束时哈佛币
+  endBalance: number; // 结束时哈夫币
   consumed: number; // 消耗 = startBalance - endBalance
 }
 
@@ -117,7 +117,7 @@ export interface CloudWindow {
   id: string;
   machineId: string; // 所属云机
   windowNumber: string; // 窗口号
-  goldBalance: number; // 窗口哈佛币余额
+  goldBalance: number; // 窗口哈夫币余额
   userId: string | null; // 使用人 (staffId)，null 表示空闲
 }
 

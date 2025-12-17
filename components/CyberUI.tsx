@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState, useCallback } from 'react';
 
 export const GlassCard = ({ children, className = "" }: { children?: ReactNode, className?: string }) => (
   <div className={`relative bg-cyber-panel/80 backdrop-blur-sm border border-cyber-primary/30 shadow-neon-box p-6 clip-angled ${className}`}>
@@ -17,7 +17,7 @@ export const GlassCard = ({ children, className = "" }: { children?: ReactNode, 
   </div>
 );
 
-export const NeonButton = ({ children, onClick, variant = 'primary', className = "" }: { children?: ReactNode, onClick?: () => void, variant?: 'primary' | 'secondary' | 'danger', className?: string }) => {
+export const NeonButton = ({ children, onClick, type = "button", variant = 'primary', className = "" }: { children?: ReactNode, onClick?: () => void, type?: "button" | "submit" | "reset", variant?: 'primary' | 'secondary' | 'danger', className?: string }) => {
   const variants = {
     primary: 'bg-cyber-primary/10 text-cyber-primary border border-cyber-primary shadow-neon-cyan hover:bg-cyber-primary hover:text-black',
     secondary: 'bg-transparent text-cyber-text border border-cyber-muted hover:border-cyber-primary hover:text-cyber-primary',
@@ -26,6 +26,7 @@ export const NeonButton = ({ children, onClick, variant = 'primary', className =
 
   return (
     <button 
+      type={type}
       onClick={onClick}
       className={`px-6 py-2 font-mono uppercase font-bold tracking-widest text-sm transition-all duration-300 transform active:scale-95 clip-angled ${variants[variant]} ${className}`}
     >
@@ -151,3 +152,166 @@ export const CyberSelect = ({ label, value, onChange, options }: {
     </div>
   </div>
 );
+
+
+// 赛博风格弹窗组件
+export const CyberModal = ({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  title, 
+  message, 
+  confirmText = '确认', 
+  cancelText = '取消',
+  type = 'confirm' // 'confirm' | 'alert' | 'success' | 'warning'
+}: { 
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm?: () => void;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  type?: 'confirm' | 'alert' | 'success' | 'warning';
+}) => {
+  if (!isOpen) return null;
+
+  const typeStyles = {
+    confirm: { border: 'border-cyber-primary', title: 'text-cyber-primary', icon: '?' },
+    alert: { border: 'border-red-500', title: 'text-red-400', icon: '!' },
+    success: { border: 'border-green-500', title: 'text-green-400', icon: '✓' },
+    warning: { border: 'border-yellow-500', title: 'text-yellow-400', icon: '⚠' }
+  };
+
+  const style = typeStyles[type];
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <div className={`bg-cyber-panel border ${style.border} p-6 max-w-md w-full relative`}>
+        {/* 装饰线条 */}
+        <div className={`absolute top-0 left-0 w-16 h-[2px] ${style.border.replace('border-', 'bg-')} shadow-lg`}></div>
+        <div className={`absolute bottom-0 right-0 w-16 h-[2px] ${style.border.replace('border-', 'bg-')} shadow-lg`}></div>
+        <div className={`absolute top-0 right-0 w-[2px] h-8 ${style.border.replace('border-', 'bg-')}/50`}></div>
+        <div className={`absolute bottom-0 left-0 w-[2px] h-8 ${style.border.replace('border-', 'bg-')}/50`}></div>
+
+        {/* 标题 */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`w-8 h-8 border ${style.border} flex items-center justify-center ${style.title} font-mono text-lg`}>
+            {style.icon}
+          </div>
+          <h3 className={`text-xl font-mono ${style.title} tracking-wider`}>{title}</h3>
+        </div>
+
+        {/* 内容 */}
+        <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">{message}</p>
+
+        {/* 按钮 */}
+        <div className="flex gap-3">
+          {type === 'confirm' ? (
+            <>
+              <button 
+                onClick={onClose}
+                className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 hover:border-gray-500 transition-all font-mono text-sm"
+              >
+                {cancelText}
+              </button>
+              <button 
+                onClick={() => { onConfirm?.(); onClose(); }}
+                className={`flex-1 py-2 ${style.border.replace('border-', 'bg-')}/20 border ${style.border} ${style.title} hover:${style.border.replace('border-', 'bg-')}/40 transition-all font-mono text-sm`}
+              >
+                {confirmText}
+              </button>
+            </>
+          ) : (
+            <button 
+              onClick={onClose}
+              className={`w-full py-2 ${style.border.replace('border-', 'bg-')}/20 border ${style.border} ${style.title} hover:${style.border.replace('border-', 'bg-')}/40 transition-all font-mono text-sm`}
+            >
+              {confirmText}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// 使用 Hook 管理弹窗状态
+export const useCyberModal = () => {
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'confirm' | 'alert' | 'success' | 'warning';
+    onConfirm?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'confirm'
+  });
+
+  const showModal = useCallback((options: {
+    title: string;
+    message: string;
+    type?: 'confirm' | 'alert' | 'success' | 'warning';
+    onConfirm?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  }) => {
+    setModalState({
+      isOpen: true,
+      title: options.title,
+      message: options.message,
+      type: options.type || 'confirm',
+      onConfirm: options.onConfirm,
+      confirmText: options.confirmText,
+      cancelText: options.cancelText
+    });
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setModalState(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
+  // 便捷方法
+  const showAlert = useCallback((title: string, message: string, confirmText = '知道了') => {
+    showModal({ title, message, type: 'alert', confirmText });
+  }, [showModal]);
+
+  const showSuccess = useCallback((title: string, message: string, confirmText = '好的') => {
+    showModal({ title, message, type: 'success', confirmText });
+  }, [showModal]);
+
+  const showWarning = useCallback((title: string, message: string, confirmText = '知道了') => {
+    showModal({ title, message, type: 'warning', confirmText });
+  }, [showModal]);
+
+  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void, confirmText = '确认', cancelText = '取消') => {
+    showModal({ title, message, type: 'confirm', onConfirm, confirmText, cancelText });
+  }, [showModal]);
+
+  return {
+    modalState,
+    showModal,
+    closeModal,
+    showAlert,
+    showSuccess,
+    showWarning,
+    showConfirm,
+    ModalComponent: () => (
+      <CyberModal
+        isOpen={modalState.isOpen}
+        onClose={closeModal}
+        onConfirm={modalState.onConfirm}
+        title={modalState.title}
+        message={modalState.message}
+        type={modalState.type}
+        confirmText={modalState.confirmText}
+        cancelText={modalState.cancelText}
+      />
+    )
+  };
+};

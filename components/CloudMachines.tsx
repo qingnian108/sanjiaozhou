@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Monitor, Server, Circle, ChevronDown, ChevronUp, ShoppingCart, Bell, Check, X, Coins } from 'lucide-react';
+import { Plus, Trash2, Monitor, Server, Circle, ChevronDown, ChevronUp, ShoppingCart, Bell, Coins } from 'lucide-react';
 import { CloudMachine, CloudWindow, Staff, PurchaseRecord, WindowRequest } from '../types';
-import { CyberCard, CyberInput, CyberButton } from './CyberUI';
+import { CyberCard, CyberInput, CyberButton, useCyberModal } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
 
 interface NewWindow {
@@ -22,7 +22,7 @@ interface Props {
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onUpdateWindowGold: (windowId: string, goldBalance: number) => void;
   onAddPurchase: (record: Omit<PurchaseRecord, 'id'>) => void;
-  onProcessRequest: (requestId: string, approved: boolean, adminId: string, windowId?: string) => void;
+  onProcessRequest: (requestId: string, approved: boolean, adminId: string) => void;
   onRechargeWindow: (windowId: string, amount: number, operatorId: string) => void;
 }
 
@@ -42,17 +42,13 @@ export const CloudMachines: React.FC<Props> = ({
   onProcessRequest,
   onRechargeWindow
 }) => {
-  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests'>('machines');
+  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests'>('purchase');
   const [rechargeWindowId, setRechargeWindowId] = useState<string | null>(null);
   const [rechargeAmount, setRechargeAmount] = useState('');
-  const [assignWindowForRequest, setAssignWindowForRequest] = useState<string | null>(null);
-  const [selectedWindowForAssign, setSelectedWindowForAssign] = useState('');
+  const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   // 待审批的申请
   const pendingRequests = windowRequests.filter(r => r.status === 'pending');
-
-  // 空闲窗口（用于分配）
-  const freeWindows = windows.filter(w => !w.userId);
 
   // 处理充值
   const handleRecharge = () => {
@@ -65,23 +61,13 @@ export const CloudMachines: React.FC<Props> = ({
 
   // 处理审批申请
   const handleApproveRequest = (requestId: string) => {
-    if (!selectedWindowForAssign) {
-      alert('请选择要分配的窗口');
-      return;
-    }
-    onProcessRequest(requestId, true, adminId, selectedWindowForAssign);
-    setAssignWindowForRequest(null);
-    setSelectedWindowForAssign('');
+    onProcessRequest(requestId, true, adminId);
   };
 
   const handleRejectRequest = (requestId: string) => {
     onProcessRequest(requestId, false, adminId);
   };
 
-  // 处理释放申请审批
-  const handleApproveRelease = (requestId: string) => {
-    onProcessRequest(requestId, true, adminId);
-  };
   const [expandedMachine, setExpandedMachine] = useState<string | null>(null);
   const [windowNumber, setWindowNumber] = useState('');
   const [windowGold, setWindowGold] = useState('');
@@ -112,20 +98,20 @@ export const CloudMachines: React.FC<Props> = ({
     setPurchaseWindows(updated);
   };
 
-  // 计算总哈佛币
+  // 计算总哈夫币
   const totalGoldInPurchase = purchaseWindows.reduce((sum, w) => sum + (parseFloat(w.goldBalance) || 0), 0);
 
   // 提交云机采购
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!purchasePhone || !purchasePlatform) {
-      alert('请填写手机号和平台');
+      showAlert('信息不完整', '请填写手机号和平台');
       return;
     }
     
     const validWindows = purchaseWindows.filter(w => w.windowNumber && w.goldBalance);
     if (validWindows.length === 0) {
-      alert('请至少添加一个窗口');
+      showAlert('信息不完整', '请至少添加一个窗口');
       return;
     }
 
@@ -157,7 +143,7 @@ export const CloudMachines: React.FC<Props> = ({
     setPurchaseCost('');
     setPurchaseWindows([{ windowNumber: '', goldBalance: '' }]);
     setActiveTab('machines');
-    alert('云机采购成功！');
+    showSuccess('采购成功', '云机采购成功！');
   };
 
   const handleAddWindow = (machineId: string) => {
@@ -180,11 +166,6 @@ export const CloudMachines: React.FC<Props> = ({
     <div className="space-y-6">
       {/* Tab 切换 */}
       <div className="flex gap-4">
-        <button onClick={() => setActiveTab('machines')}
-          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
-            ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
-          <Monitor size={20} /> 云机管理
-        </button>
         <button onClick={() => setActiveTab('purchase')}
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
             ${activeTab === 'purchase' ? 'bg-cyber-accent/10 border-cyber-accent text-cyber-accent' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
@@ -199,6 +180,11 @@ export const CloudMachines: React.FC<Props> = ({
               {pendingRequests.length}
             </span>
           )}
+        </button>
+        <button onClick={() => setActiveTab('machines')}
+          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
+            ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
+          <Monitor size={20} /> 云机管理
         </button>
       </div>
 
@@ -233,8 +219,8 @@ export const CloudMachines: React.FC<Props> = ({
                         className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-cyber-primary text-xs font-mono mb-1">哈佛币余额</label>
-                      <input type="number" value={w.goldBalance} placeholder="输入哈佛币"
+                      <label className="block text-cyber-primary text-xs font-mono mb-1">哈夫币余额</label>
+                      <input type="number" value={w.goldBalance} placeholder="输入哈夫币"
                         onChange={e => updateWindowRow(index, 'goldBalance', e.target.value)}
                         className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                     </div>
@@ -249,7 +235,7 @@ export const CloudMachines: React.FC<Props> = ({
 
               <div className="mt-4 pt-4 border-t border-cyber-accent/20 flex justify-between items-center">
                 <div className="text-sm text-gray-400">共 {purchaseWindows.filter(w => w.windowNumber).length} 个窗口</div>
-                <div className="text-cyber-accent font-mono text-lg">总哈佛币: {formatWan(totalGoldInPurchase)}</div>
+                <div className="text-cyber-accent font-mono text-lg">总哈夫币: {formatWan(totalGoldInPurchase)}</div>
               </div>
             </div>
 
@@ -291,7 +277,7 @@ export const CloudMachines: React.FC<Props> = ({
                       <div className="flex items-center gap-6">
                         <div className="text-right">
                           <div className="text-cyber-accent font-mono text-xl">{formatWan(totalGold)}</div>
-                          <div className="text-xs text-gray-500">总哈佛币</div>
+                          <div className="text-xs text-gray-500">总哈夫币</div>
                         </div>
                         <div className="text-sm">
                           <span className="text-green-400">{machineWindows.length - occupiedCount}</span>
@@ -315,8 +301,8 @@ export const CloudMachines: React.FC<Props> = ({
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
                           <div className="flex-1">
-                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 哈佛币余额`}</label>
-                            <input type="number" value={windowGold} onChange={e => setWindowGold(e.target.value)} placeholder="输入哈佛币"
+                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 哈夫币余额`}</label>
+                            <input type="number" value={windowGold} onChange={e => setWindowGold(e.target.value)} placeholder="输入哈夫币"
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
                           <button onClick={() => handleAddWindow(machine.id)} disabled={!windowNumber}
@@ -339,7 +325,7 @@ export const CloudMachines: React.FC<Props> = ({
                                   <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={14} /></button>
                                 </div>
                                 <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-xs text-gray-400">哈佛币:</span>
+                                  <span className="text-xs text-gray-400">哈夫币:</span>
                                   <span className={`font-mono text-sm ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
                                     {formatWan(window.goldBalance)}
                                     {window.goldBalance < 1000000 && <span className="text-xs ml-1">(低)</span>}
@@ -358,7 +344,7 @@ export const CloudMachines: React.FC<Props> = ({
                                   </div>
                                 ) : (
                                   <select className="w-full bg-black/40 border border-cyber-primary/30 text-xs p-1 rounded" value=""
-                                    onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 4) { alert('该员工已使用4个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
+                                    onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 4) { showAlert('无法分配', '该员工已使用4个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
                                     <option value="">分配给...</option>
                                     {staffList.map(s => (<option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 4}>{s.name} ({getStaffWindowCount(s.id)}/4)</option>))}
                                   </select>
@@ -384,86 +370,52 @@ export const CloudMachines: React.FC<Props> = ({
             <div className="text-center py-8 text-gray-500">暂无待审批的申请</div>
           ) : (
             <div className="space-y-4">
-              {pendingRequests.map(request => (
-                <div key={request.id} className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-mono text-lg text-white">{request.staffName}</div>
-                      <div className="text-sm text-gray-400">
-                        {request.type === 'apply' ? '申请新窗口' : '申请释放窗口'}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {new Date(request.createdAt).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {request.type === 'apply' ? (
-                        assignWindowForRequest === request.id ? (
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={selectedWindowForAssign}
-                              onChange={e => setSelectedWindowForAssign(e.target.value)}
-                              className="bg-black/60 border border-cyber-primary/30 text-cyber-text px-2 py-1 text-sm"
-                            >
-                              <option value="">选择窗口...</option>
-                              {freeWindows.map(w => {
-                                const machine = machines.find(m => m.id === w.machineId);
-                                return (
-                                  <option key={w.id} value={w.id}>
-                                    #{w.windowNumber} - {machine?.phone} ({formatWan(w.goldBalance)})
-                                  </option>
-                                );
-                              })}
-                            </select>
-                            <button
-                              onClick={() => handleApproveRequest(request.id)}
-                              className="p-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded"
-                            >
-                              <Check size={16} />
-                            </button>
-                            <button
-                              onClick={() => { setAssignWindowForRequest(null); setSelectedWindowForAssign(''); }}
-                              className="p-2 bg-gray-500/20 text-gray-400 hover:bg-gray-500/30 rounded"
-                            >
-                              <X size={16} />
-                            </button>
+              {pendingRequests.map(request => {
+                const requestWindow = request.windowId ? windows.find(w => w.id === request.windowId) : null;
+                const requestMachine = requestWindow ? machines.find(m => m.id === requestWindow.machineId) : null;
+                return (
+                  <div key={request.id} className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-mono text-lg text-white">{request.staffName}</div>
+                        <div className="text-sm text-gray-400">
+                          {request.type === 'apply' ? '申请窗口' : '申请释放窗口'}
+                        </div>
+                        {requestWindow && (
+                          <div className="mt-2 p-2 bg-black/30 rounded border border-cyber-primary/20">
+                            <div className="text-sm text-cyber-primary">
+                              窗口 #{requestWindow.windowNumber}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {requestMachine?.phone} ({requestMachine?.platform})
+                            </div>
+                            <div className="text-xs text-cyber-accent mt-1">
+                              余额: {formatWan(requestWindow.goldBalance)}
+                            </div>
                           </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => setAssignWindowForRequest(request.id)}
-                              className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30"
-                            >
-                              批准
-                            </button>
-                            <button
-                              onClick={() => handleRejectRequest(request.id)}
-                              className="px-3 py-1 bg-red-500/20 border border-red-500 text-red-400 text-sm hover:bg-red-500/30"
-                            >
-                              拒绝
-                            </button>
-                          </>
-                        )
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => handleApproveRelease(request.id)}
-                            className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30"
-                          >
-                            批准释放
-                          </button>
-                          <button
-                            onClick={() => handleRejectRequest(request.id)}
-                            className="px-3 py-1 bg-red-500/20 border border-red-500 text-red-400 text-sm hover:bg-red-500/30"
-                          >
-                            拒绝
-                          </button>
-                        </>
-                      )}
+                        )}
+                        <div className="text-xs text-gray-500 mt-2">
+                          {new Date(request.createdAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleApproveRequest(request.id)}
+                          className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm hover:bg-green-500/30"
+                        >
+                          批准
+                        </button>
+                        <button
+                          onClick={() => handleRejectRequest(request.id)}
+                          className="px-3 py-1 bg-red-500/20 border border-red-500 text-red-400 text-sm hover:bg-red-500/30"
+                        >
+                          拒绝
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CyberCard>
@@ -471,8 +423,10 @@ export const CloudMachines: React.FC<Props> = ({
 
       {/* 充值弹窗 */}
       {rechargeWindowId && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-cyber-primary p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
             <h3 className="text-xl font-mono text-cyber-primary mb-4 flex items-center gap-2">
               <Coins size={20} /> 窗口充值
             </h3>
@@ -484,16 +438,19 @@ export const CloudMachines: React.FC<Props> = ({
               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
             />
             <div className="flex gap-3">
-              <button onClick={() => { setRechargeWindowId(null); setRechargeAmount(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+              <button onClick={() => { setRechargeWindowId(null); setRechargeAmount(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">
                 取消
               </button>
-              <button onClick={handleRecharge} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30">
+              <button onClick={handleRecharge} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm">
                 确认充值
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* 通用弹窗 */}
+      <ModalComponent />
     </div>
   );
 };
