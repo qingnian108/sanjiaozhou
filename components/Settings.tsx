@@ -38,13 +38,6 @@ export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave }) => {
               value={form.defaultFeePercent} 
               onChange={(e: any) => setForm({...form, defaultFeePercent: parseFloat(e.target.value)})} 
             />
-             <CyberInput 
-              label="初始资金 (元)" 
-              type="number"
-              step="1"
-              value={form.initialCapital} 
-              onChange={(e: any) => setForm({...form, initialCapital: parseFloat(e.target.value)})} 
-            />
 
             <div className="pt-4 flex justify-end">
               <NeonButton variant="primary">

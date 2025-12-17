@@ -5,7 +5,7 @@ import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine
 const DEFAULT_SETTINGS: Settings = {
   employeeCostRate: 12,
   orderUnitPrice: 60,
-  defaultFeePercent: 7,
+  defaultFeePercent: 5,
   initialCapital: 10000
 };
 
@@ -54,16 +54,24 @@ export function useFirestore(tenantId: string | null) {
     }
     
     try {
-      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes, requestsRes] = await Promise.all([
-        db.collection('purchases').where({ tenantId }).get(),
-        db.collection('orders').where({ tenantId }).get(),
-        db.collection('staff').where({ tenantId }).get(),
-        db.collection('config').doc(`settings_${tenantId}`).get(),
-        db.collection('kookChannels').where({ tenantId }).get(),
-        db.collection('cloudMachines').where({ tenantId }).get(),
-        db.collection('cloudWindows').where({ tenantId }).get(),
-        db.collection('windowRequests').where({ tenantId }).get()
+      // 分开请求，避免某个集合不存在导致全部失败
+      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes] = await Promise.all([
+        db.collection('purchases').where({ tenantId }).get().catch(() => ({ data: [] })),
+        db.collection('orders').where({ tenantId }).get().catch(() => ({ data: [] })),
+        db.collection('staff').where({ tenantId }).get().catch(() => ({ data: [] })),
+        db.collection('config').doc(`settings_${tenantId}`).get().catch(() => ({ data: [] })),
+        db.collection('kookChannels').where({ tenantId }).get().catch(() => ({ data: [] })),
+        db.collection('cloudMachines').where({ tenantId }).get().catch(() => ({ data: [] })),
+        db.collection('cloudWindows').where({ tenantId }).get().catch(() => ({ data: [] }))
       ]);
+      
+      // windowRequests 单独请求，因为可能不存在
+      let requestsRes = { data: [] };
+      try {
+        requestsRes = await db.collection('windowRequests').where({ tenantId }).get();
+      } catch (e) {
+        console.log('windowRequests collection may not exist');
+      }
 
       setPurchases((purchasesRes.data || []).map((d: any) => ({ id: d._id, ...d })));
       setOrders((ordersRes.data || []).map((d: any) => ({ id: d._id, ...d })));
@@ -162,6 +170,12 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  // Update purchase
+  const updatePurchase = async (id: string, data: Partial<PurchaseRecord>) => {
+    await updateDocument('purchases', id, data);
+    await loadData();
+  };
+
   // Delete order
   const deleteOrder = async (id: string) => {
     await db.collection('orders').doc(id).remove();
@@ -205,6 +219,41 @@ export function useFirestore(tenantId: string | null) {
     await db.collection('cloudMachines').doc(id).set({ ...machine, tenantId });
     await loadData();
     return id;
+  };
+
+  // 批量采购云机（一次性创建云机+窗口+采购记录，只刷新一次）
+  const batchPurchase = async (
+    machine: Omit<CloudMachine, 'id'>,
+    windows: { windowNumber: string; goldBalance: number }[],
+    purchase?: Omit<PurchaseRecord, 'id'>
+  ) => {
+    if (!tenantId) return '';
+    
+    // 创建云机
+    const machineId = generateId();
+    await db.collection('cloudMachines').doc(machineId).set({ ...machine, tenantId });
+    
+    // 创建窗口
+    for (const w of windows) {
+      const windowId = generateId();
+      await db.collection('cloudWindows').doc(windowId).set({
+        machineId,
+        windowNumber: w.windowNumber,
+        goldBalance: w.goldBalance,
+        userId: null,
+        tenantId
+      });
+    }
+    
+    // 记录采购
+    if (purchase) {
+      const purchaseId = generateId();
+      await db.collection('purchases').doc(purchaseId).set({ ...purchase, tenantId });
+    }
+    
+    // 只刷新一次
+    await loadData();
+    return machineId;
   };
 
   const deleteCloudMachine = async (id: string) => {
@@ -411,12 +460,14 @@ export function useFirestore(tenantId: string | null) {
     addOrder,
     completeOrder,
     deletePurchase,
+    updatePurchase,
     deleteOrder,
     deleteStaff,
     saveSettings,
     addKookChannel,
     deleteKookChannel,
     addCloudMachine,
+    batchPurchase,
     deleteCloudMachine,
     updateCloudMachine,
     addCloudWindow,

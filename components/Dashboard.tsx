@@ -1,44 +1,81 @@
 import React, { useState, useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Activity, Box, TrendingUp, Clock, CheckCircle, Pause, FileText, Trash2, Calendar } from 'lucide-react';
-import { GlassCard, StatBox, SectionHeader, CyberInput, useCyberModal } from './CyberUI';
-import { GlobalStats, DailyStats, OrderRecord, Staff } from '../types';
-import { formatCurrency, formatChineseNumber, formatWan } from '../utils';
+import { Activity, Clock, CheckCircle, Trash2 } from 'lucide-react';
+import { GlassCard, StatBox, SectionHeader, useCyberModal } from './CyberUI';
+import { GlobalStats, DailyStats, OrderRecord, Staff, CloudWindow, PurchaseRecord, Settings } from '../types';
+import { formatCurrency, formatWan } from '../utils';
 
 interface DashboardProps {
   globalStats: GlobalStats;
   dailyStats: DailyStats[];
   orders: OrderRecord[];
   staffList: Staff[];
+  cloudWindows: CloudWindow[];
+  purchases: PurchaseRecord[];
+  settings: Settings;
   onDeleteOrder: (id: string) => void;
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-cyber-panel border border-cyber-primary/50 p-3 shadow-neon-box">
-        <p className="text-cyber-primary font-mono font-bold text-sm mb-2 border-b border-cyber-primary/30 pb-1">{label}</p>
-        {payload.map((p: any, index: number) => (
-          <p key={index} className="text-xs font-mono" style={{ color: p.stroke || p.fill }}>
-            {p.name === 'Profit' ? '利润' : p.name === 'Inventory' ? '库存' : p.name}: {typeof p.value === 'number' ? formatChineseNumber(p.value) : p.value}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
-
-export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, onDeleteOrder }) => {
-  const chartData = dailyStats.slice(-30);
+export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, cloudWindows, purchases, settings, onDeleteOrder }) => {
   const today = new Date().toISOString().split('T')[0];
+  
+  // 计算实际库存（所有窗口余额总和）
+  const actualInventory = useMemo(() => {
+    return cloudWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+  }, [cloudWindows]);
+
+  // 计算平均成本（从采购记录：总成本 / 总采购量千万数）
+  const avgCost = useMemo(() => {
+    const totalAmount = purchases.reduce((sum, p) => sum + p.amount, 0); // 总采购量
+    const totalCost = purchases.reduce((sum, p) => sum + p.cost, 0); // 总成本（元）
+    if (totalAmount === 0) return 0;
+    return totalCost / (totalAmount / 10000000); // 元/千万
+  }, [purchases]);
+
+  // 计算累计利润（已完成订单的收入 - 成本）
+  const totalProfit = useMemo(() => {
+    const completedOrders = orders.filter(o => o.status === 'completed');
+    let profit = 0;
+    completedOrders.forEach(order => {
+      // 收入 = 订单金额 * 单价 / 1000
+      const revenue = (order.amount / 1000) * order.unitPrice;
+      // 成本 = (订单金额 + 损耗) * 平均成本 / 1000 + 员工成本
+      const cogs = ((order.amount + (order.loss || 0)) / 1000) * avgCost;
+      const laborCost = (order.amount / 1000) * settings.employeeCostRate;
+      profit += revenue - cogs - laborCost;
+    });
+    return profit;
+  }, [orders, avgCost, settings.employeeCostRate]);
   
   // 进行中订单的日期筛选
   const [pendingDateFilter, setPendingDateFilter] = useState('');
-  // 订单记录的日期筛选（默认今天）
-  const [recordDateFilter, setRecordDateFilter] = useState(today);
+  // 订单记录的周期筛选
+  const [recordPeriod, setRecordPeriod] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('today');
+  // 自定义日期范围
+  const [customStartDate, setCustomStartDate] = useState(today);
+  const [customEndDate, setCustomEndDate] = useState(today);
   // 删除确认
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+  
+  // 获取周期的起始日期
+  const getPeriodStartDate = (period: 'today' | 'week' | 'month' | 'all' | 'custom') => {
+    const now = new Date();
+    if (period === 'today') return today;
+    if (period === 'week') {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      return weekStart.toISOString().split('T')[0];
+    }
+    if (period === 'month') {
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    }
+    if (period === 'custom') return customStartDate;
+    return ''; // all
+  };
+  
+  const getPeriodEndDate = (period: 'today' | 'week' | 'month' | 'all' | 'custom') => {
+    if (period === 'custom') return customEndDate;
+    return today;
+  };
   
   const { showSuccess, ModalComponent } = useCyberModal();
   
@@ -46,6 +83,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   const getStaffName = (staffId: string) => {
     const staff = staffList.find(s => s.id === staffId);
     return staff?.name || '未知';
+  };
+
+  // 计算订单收入（金额 * 单价 / 1000）
+  const getOrderRevenue = (order: OrderRecord) => {
+    return (order.amount / 1000) * order.unitPrice;
+  };
+
+  // 计算订单利润（收入 - 成本 - 员工成本）
+  const getOrderProfit = (order: OrderRecord) => {
+    const revenue = getOrderRevenue(order);
+    const cogs = ((order.amount + (order.loss || 0)) / 1000) * avgCost;
+    const laborCost = (order.amount / 1000) * settings.employeeCostRate;
+    return revenue - cogs - laborCost;
   };
 
   // 所有进行中的订单（pending + paused）
@@ -60,21 +110,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   // 进行中订单统计
   const pendingStats = useMemo(() => {
     const totalAmount = pendingOrders.reduce((sum, o) => sum + o.amount, 0);
-    return { total: pendingOrders.length, totalAmount };
+    const totalRevenue = pendingOrders.reduce((sum, o) => sum + getOrderRevenue(o), 0);
+    return { total: pendingOrders.length, totalAmount, totalRevenue };
   }, [pendingOrders]);
 
-  // 按日期筛选的已完成订单
+  // 按周期筛选的已完成订单
   const completedOrders = useMemo(() => {
-    if (!recordDateFilter) return [];
-    return orders.filter(o => o.date === recordDateFilter && o.status === 'completed');
-  }, [orders, recordDateFilter]);
+    const startDate = getPeriodStartDate(recordPeriod);
+    const endDate = getPeriodEndDate(recordPeriod);
+    return orders.filter(o => {
+      if (o.status !== 'completed') return false;
+      if (recordPeriod === 'all') return true;
+      return o.date >= startDate && o.date <= endDate;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [orders, recordPeriod, today, customStartDate, customEndDate]);
 
   // 已完成订单统计
   const completedStats = useMemo(() => {
     const totalAmount = completedOrders.reduce((sum, o) => sum + o.amount, 0);
     const totalLoss = completedOrders.reduce((sum, o) => sum + (o.loss || 0), 0);
-    return { total: completedOrders.length, totalAmount, totalLoss };
-  }, [completedOrders]);
+    const totalRevenue = completedOrders.reduce((sum, o) => sum + getOrderRevenue(o), 0);
+    const totalProfit = completedOrders.reduce((sum, o) => sum + getOrderProfit(o), 0);
+    return { total: completedOrders.length, totalAmount, totalLoss, totalRevenue, totalProfit };
+  }, [completedOrders, avgCost]);
 
   // 确认删除订单
   const handleDeleteOrder = () => {
@@ -90,25 +148,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
       <SectionHeader title="指挥中心 // 资产总览" icon={Activity} />
       
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox 
-          label="当前总资产" 
-          value={formatCurrency(globalStats.totalAssets)}
-          subValue={`现金储备: ${formatCurrency(globalStats.currentCash)}`}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatBox 
           label="历史累计利润" 
-          value={formatCurrency(globalStats.totalProfit)}
+          value={formatCurrency(totalProfit)}
           subValue="累计盈亏"
         />
         <StatBox 
           label="当前库存" 
-          value={formatWan(globalStats.currentInventory)}
-          subValue={`市值 ${formatCurrency(globalStats.inventoryValue)}`}
+          value={formatWan(actualInventory)}
+          subValue={`窗口余额总和`}
         />
         <StatBox 
           label="平均成本" 
-          value={formatCurrency(globalStats.avgCostPer1000)}
+          value={formatCurrency(avgCost)}
           subValue="每千万哈夫币"
         />
       </div>
@@ -123,7 +176,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             </h3>
             <div className="flex items-center gap-4">
               <span className="text-xs text-gray-400">
-                总金额: <span className="text-cyber-accent font-mono">{pendingStats.totalAmount}</span> 万
+                {pendingStats.totalAmount} 万 | <span className="text-green-400">¥{pendingStats.totalRevenue.toFixed(2)}</span>
               </span>
               <input
                 type="date"
@@ -163,6 +216,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
                       <span className="font-mono text-white">{getStaffName(order.staffId)}</span>
                       <span className="text-gray-500 mx-2">|</span>
                       <span className="text-cyber-accent font-mono">{order.amount} 万</span>
+                      <span className="text-green-400 font-mono ml-2">¥{getOrderRevenue(order).toFixed(2)}</span>
                       {order.status === 'paused' && (
                         <span className="text-xs text-orange-400 ml-2">
                           (已完成 {order.completedAmount || 0} 万)
@@ -203,12 +257,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
               <CheckCircle size={16} /> 已完成订单记录
             </h3>
             <div className="flex items-center gap-4">
-              <input
-                type="date"
-                value={recordDateFilter}
-                onChange={e => setRecordDateFilter(e.target.value)}
-                className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-xs"
-              />
+              <div className="flex gap-1">
+                {[
+                  { key: 'today', label: '今天' },
+                  { key: 'week', label: '本周' },
+                  { key: 'month', label: '本月' },
+                  { key: 'all', label: '全部' },
+                  { key: 'custom', label: '自定义' }
+                ].map(p => (
+                  <button
+                    key={p.key}
+                    onClick={() => setRecordPeriod(p.key as any)}
+                    className={`px-2 py-1 text-xs font-mono border ${
+                      recordPeriod === p.key
+                        ? 'bg-green-500/20 border-green-500 text-green-400'
+                        : 'border-gray-600 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               <span className="text-xs text-gray-400">
                 共 <span className="text-green-400">{completedStats.total}</span> 单 | 
                 <span className="text-cyber-accent ml-1">{completedStats.totalAmount}</span> 万
@@ -216,15 +285,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             </div>
           </div>
           
+          {/* 自定义日期范围 */}
+          {recordPeriod === 'custom' && (
+            <div className="flex items-center gap-2 mb-4 p-2 bg-black/30 rounded border border-cyber-primary/20">
+              <span className="text-xs text-gray-400">从</span>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={e => setCustomStartDate(e.target.value)}
+                className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-xs"
+              />
+              <span className="text-xs text-gray-400">到</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={e => setCustomEndDate(e.target.value)}
+                className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-xs"
+              />
+            </div>
+          )}
+          
           {/* 统计 */}
-          <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="grid grid-cols-4 gap-2 mb-4">
             <div className="bg-green-500/10 border border-green-500/30 p-2 rounded text-center">
-              <div className="text-xs text-green-400">完成订单</div>
+              <div className="text-xs text-green-400">订单</div>
               <div className="text-lg font-mono text-green-400">{completedStats.total}</div>
             </div>
             <div className="bg-cyber-accent/10 border border-cyber-accent/30 p-2 rounded text-center">
-              <div className="text-xs text-cyber-accent">完成金额</div>
-              <div className="text-lg font-mono text-cyber-accent">{completedStats.totalAmount} 万</div>
+              <div className="text-xs text-cyber-accent">金额</div>
+              <div className="text-lg font-mono text-cyber-accent">{completedStats.totalAmount}万</div>
+            </div>
+            <div className="bg-blue-500/10 border border-blue-500/30 p-2 rounded text-center">
+              <div className="text-xs text-blue-400">收入</div>
+              <div className="text-lg font-mono text-blue-400">¥{completedStats.totalRevenue.toFixed(0)}</div>
+            </div>
+            <div className="bg-purple-500/10 border border-purple-500/30 p-2 rounded text-center">
+              <div className="text-xs text-purple-400">利润</div>
+              <div className={`text-lg font-mono ${completedStats.totalProfit >= 0 ? 'text-purple-400' : 'text-red-400'}`}>¥{completedStats.totalProfit.toFixed(0)}</div>
             </div>
           </div>
 
@@ -241,6 +338,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
                       <span className="font-mono text-white">{getStaffName(order.staffId)}</span>
                       <span className="text-gray-500 mx-2">|</span>
                       <span className="text-cyber-accent font-mono">{order.amount} 万</span>
+                      <span className="text-blue-400 font-mono ml-2">¥{getOrderRevenue(order).toFixed(0)}</span>
+                      <span className={`font-mono ml-2 ${getOrderProfit(order) >= 0 ? 'text-purple-400' : 'text-red-400'}`}>
+                        利润 ¥{getOrderProfit(order).toFixed(0)}
+                      </span>
                       {order.loss > 0 && (
                         <span className="text-xs text-red-400 ml-2">(损耗 {order.loss} 万)</span>
                       )}
@@ -263,48 +364,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              该日期暂无已完成订单
+              该周期暂无已完成订单
             </div>
           )}
-        </GlassCard>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <GlassCard className="h-[350px]">
-          <h3 className="text-cyber-primary font-mono text-sm mb-4 flex items-center gap-2">
-            <TrendingUp size={16} /> 利润趋势分析
-          </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2e" />
-              <XAxis dataKey="date" stroke="#6b7280" fontSize={12} tickFormatter={(str) => str.substring(5)} fontFamily="Share Tech Mono" />
-              <YAxis stroke="#6b7280" fontSize={12} fontFamily="Share Tech Mono" />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="profit" name="Profit" stroke="#00f3ff" fillOpacity={1} fill="url(#colorProfit)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </GlassCard>
-
-        <GlassCard className="h-[350px]">
-          <h3 className="text-cyber-secondary font-mono text-sm mb-4 flex items-center gap-2">
-            <Box size={16} /> 库存波动分析
-          </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2e" />
-              <XAxis dataKey="date" stroke="#6b7280" fontSize={12} tickFormatter={(str) => str.substring(5)} fontFamily="Share Tech Mono" />
-              <YAxis stroke="#6b7280" fontSize={12} fontFamily="Share Tech Mono" />
-              <Tooltip content={<CustomTooltip />} />
-              <Line type="stepAfter" dataKey="inventoryAfter" name="Inventory" stroke="#ff003c" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
         </GlassCard>
       </div>
 

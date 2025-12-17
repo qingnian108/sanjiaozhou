@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Monitor, Server, Circle, ChevronDown, ChevronUp, ShoppingCart, Bell, Coins } from 'lucide-react';
+import { Plus, Trash2, Monitor, Server, Circle, ChevronDown, ChevronUp, ShoppingCart, Bell, Coins, FileText, Edit2, Save, X } from 'lucide-react';
 import { CloudMachine, CloudWindow, Staff, PurchaseRecord, WindowRequest } from '../types';
 import { CyberCard, CyberInput, CyberButton, useCyberModal } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -14,14 +14,18 @@ interface Props {
   windows: CloudWindow[];
   staffList: Staff[];
   windowRequests: WindowRequest[];
+  purchases: PurchaseRecord[];
   adminId: string;
   onAddMachine: (machine: Omit<CloudMachine, 'id'>) => Promise<string>;
+  onBatchPurchase: (machine: Omit<CloudMachine, 'id'>, windows: { windowNumber: string; goldBalance: number }[], purchase?: Omit<PurchaseRecord, 'id'>) => Promise<string>;
   onDeleteMachine: (id: string) => void;
   onAddWindow: (window: Omit<CloudWindow, 'id'>) => void;
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onUpdateWindowGold: (windowId: string, goldBalance: number) => void;
   onAddPurchase: (record: Omit<PurchaseRecord, 'id'>) => void;
+  onDeletePurchase: (id: string) => void;
+  onUpdatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   onProcessRequest: (requestId: string, approved: boolean, adminId: string) => void;
   onRechargeWindow: (windowId: string, amount: number, operatorId: string) => void;
 }
@@ -31,20 +35,26 @@ export const CloudMachines: React.FC<Props> = ({
   windows,
   staffList,
   windowRequests,
+  purchases,
   adminId,
   onAddMachine,
+  onBatchPurchase,
   onDeleteMachine,
   onAddWindow,
   onDeleteWindow,
   onAssignWindow,
   onUpdateWindowGold,
   onAddPurchase,
+  onDeletePurchase,
+  onUpdatePurchase,
   onProcessRequest,
   onRechargeWindow
 }) => {
-  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests'>('purchase');
+  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests' | 'records'>('purchase');
   const [rechargeWindowId, setRechargeWindowId] = useState<string | null>(null);
   const [rechargeAmount, setRechargeAmount] = useState('');
+  const [editingPurchase, setEditingPurchase] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ date: '', amount: '', cost: '' });
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   // 待审批的申请
@@ -68,7 +78,8 @@ export const CloudMachines: React.FC<Props> = ({
     onProcessRequest(requestId, false, adminId);
   };
 
-  const [expandedMachine, setExpandedMachine] = useState<string | null>(null);
+  // 默认展开所有云机
+  const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const [windowNumber, setWindowNumber] = useState('');
   const [windowGold, setWindowGold] = useState('');
   
@@ -115,27 +126,23 @@ export const CloudMachines: React.FC<Props> = ({
       return;
     }
 
-    // 创建云机
-    const machineId = await onAddMachine({ phone: purchasePhone, platform: purchasePlatform });
+    // 批量创建云机+窗口+采购记录（一次性完成，只刷新一次）
+    const windowsData = validWindows.map(w => ({
+      windowNumber: w.windowNumber,
+      goldBalance: parseFloat(w.goldBalance) || 0
+    }));
     
-    // 创建窗口
-    for (const w of validWindows) {
-      await onAddWindow({
-        machineId,
-        windowNumber: w.windowNumber,
-        goldBalance: parseFloat(w.goldBalance) || 0,
-        userId: null
-      });
-    }
-
-    // 记录采购
-    if (purchaseCost) {
-      onAddPurchase({
-        date: today,
-        amount: totalGoldInPurchase,
-        cost: parseFloat(purchaseCost) || 0
-      });
-    }
+    const purchaseData = purchaseCost ? {
+      date: today,
+      amount: totalGoldInPurchase,
+      cost: parseFloat(purchaseCost) || 0
+    } : undefined;
+    
+    await onBatchPurchase(
+      { phone: purchasePhone, platform: purchasePlatform },
+      windowsData,
+      purchaseData
+    );
 
     // 重置表单
     setPurchasePhone('');
@@ -156,6 +163,18 @@ export const CloudMachines: React.FC<Props> = ({
   const getStaffName = (staffId: string | null) => {
     if (!staffId) return null;
     return staffList.find(s => s.id === staffId)?.name || '未知';
+  };
+
+  // 员工颜色列表
+  const staffColors = [
+    'text-cyan-400', 'text-pink-400', 'text-green-400', 'text-purple-400',
+    'text-orange-400', 'text-blue-400', 'text-red-400', 'text-teal-400'
+  ];
+  
+  const getStaffColor = (staffId: string | null) => {
+    if (!staffId) return 'text-gray-400';
+    const index = staffList.findIndex(s => s.id === staffId);
+    return staffColors[index % staffColors.length];
   };
 
   const getMachineWindows = (machineId: string) => windows.filter(w => w.machineId === machineId);
@@ -185,6 +204,11 @@ export const CloudMachines: React.FC<Props> = ({
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
             ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
           <Monitor size={20} /> 云机管理
+        </button>
+        <button onClick={() => setActiveTab('records')}
+          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
+            ${activeTab === 'records' ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
+          <FileText size={20} /> 采购记录
         </button>
       </div>
 
@@ -261,29 +285,34 @@ export const CloudMachines: React.FC<Props> = ({
                 const machineWindows = getMachineWindows(machine.id);
                 const totalGold = getMachineTotalGold(machine.id);
                 const occupiedCount = machineWindows.filter(w => w.userId).length;
-                const isExpanded = expandedMachine === machine.id;
+                const isExpanded = !collapsedMachines.has(machine.id);
 
                 return (
                   <div key={machine.id} className="border border-cyber-primary/20 rounded overflow-hidden">
                     <div className="flex justify-between items-center p-4 bg-cyber-panel/50 cursor-pointer hover:bg-cyber-panel/80"
-                      onClick={() => setExpandedMachine(isExpanded ? null : machine.id)}>
+                      onClick={() => {
+                        const newSet = new Set(collapsedMachines);
+                        if (isExpanded) newSet.add(machine.id);
+                        else newSet.delete(machine.id);
+                        setCollapsedMachines(newSet);
+                      }}>
                       <div className="flex items-center gap-4">
-                        <Server className="text-cyber-primary" size={24} />
+                        <Server className="text-cyber-primary" size={28} />
                         <div>
-                          <div className="font-mono text-lg">{machine.phone}</div>
-                          <div className="text-sm text-gray-400">{machine.platform}</div>
+                          <div className="font-mono text-xl">{machine.phone}</div>
+                          <div className="text-base text-gray-400">{machine.platform}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <div className="text-cyber-accent font-mono text-xl">{formatWan(totalGold)}</div>
-                          <div className="text-xs text-gray-500">总哈夫币</div>
+                          <div className="text-cyber-accent font-mono text-2xl">{formatWan(totalGold)}</div>
+                          <div className="text-sm text-gray-500">总哈夫币</div>
                         </div>
-                        <div className="text-sm">
-                          <span className="text-green-400">{machineWindows.length - occupiedCount}</span>
+                        <div className="text-base">
+                          <span className="text-green-400 text-lg">{machineWindows.length - occupiedCount}</span>
                           <span className="text-gray-500">/</span>
-                          <span className="text-yellow-400">{occupiedCount}</span>
-                          <div className="text-xs text-gray-500">空闲/占用</div>
+                          <span className="text-yellow-400 text-lg">{occupiedCount}</span>
+                          <div className="text-sm text-gray-500">空闲/占用</div>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); onDeleteMachine(machine.id); }} className="text-red-500 hover:text-red-400 p-1">
                           <Trash2 size={18} />
@@ -312,38 +341,38 @@ export const CloudMachines: React.FC<Props> = ({
                         </div>
 
                         {machineWindows.length === 0 ? (
-                          <p className="text-gray-500 text-sm text-center py-4">暂无窗口</p>
+                          <p className="text-gray-500 text-base text-center py-4">暂无窗口</p>
                         ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {machineWindows.map(window => (
-                              <div key={window.id} className={`p-3 rounded border ${window.userId ? 'border-yellow-500/50 bg-yellow-500/10' : 'border-green-500/50 bg-green-500/10'}`}>
-                                <div className="flex items-center justify-between mb-2">
+                              <div key={window.id} className={`p-4 rounded border ${window.userId ? 'border-yellow-500/50 bg-yellow-500/10' : 'border-green-500/50 bg-green-500/10'}`}>
+                                <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
-                                    <Circle size={8} className={window.userId ? 'text-yellow-400 fill-yellow-400' : 'text-green-400 fill-green-400'} />
-                                    <span className="font-mono">#{window.windowNumber}</span>
+                                    <Circle size={10} className={window.userId ? 'text-yellow-400 fill-yellow-400' : 'text-green-400 fill-green-400'} />
+                                    <span className="font-mono text-lg">#{window.windowNumber}</span>
                                   </div>
-                                  <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={14} /></button>
+                                  <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={16} /></button>
                                 </div>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-xs text-gray-400">哈夫币:</span>
-                                  <span className={`font-mono text-sm ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
+                                <div className="flex items-center gap-2 mb-3">
+                                  <span className="text-sm text-gray-400">哈夫币:</span>
+                                  <span className={`font-mono text-lg ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
                                     {formatWan(window.goldBalance)}
-                                    {window.goldBalance < 1000000 && <span className="text-xs ml-1">(低)</span>}
+                                    {window.goldBalance < 1000000 && <span className="text-sm ml-1">(低)</span>}
                                   </span>
                                   <button 
                                     onClick={() => setRechargeWindowId(window.id)} 
-                                    className="text-xs text-cyber-primary hover:text-cyber-accent px-2 py-0.5 border border-cyber-primary/30 rounded"
+                                    className="text-sm text-cyber-primary hover:text-cyber-accent px-2 py-1 border border-cyber-primary/30 rounded"
                                   >
                                     充值
                                   </button>
                                 </div>
                                 {window.userId ? (
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs text-yellow-300">{getStaffName(window.userId)}</span>
-                                    <button onClick={() => onAssignWindow(window.id, null)} className="text-xs text-gray-400 hover:text-white px-2 py-1 border border-gray-600 rounded">释放</button>
+                                    <span className={`text-base font-bold ${getStaffColor(window.userId)}`}>{getStaffName(window.userId)}</span>
+                                    <button onClick={() => onAssignWindow(window.id, null)} className="text-sm text-gray-400 hover:text-white px-3 py-1 border border-gray-600 rounded">释放</button>
                                   </div>
                                 ) : (
-                                  <select className="w-full bg-black/40 border border-cyber-primary/30 text-xs p-1 rounded" value=""
+                                  <select className="w-full bg-black/40 border border-cyber-primary/30 text-sm p-2 rounded" value=""
                                     onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 4) { showAlert('无法分配', '该员工已使用4个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
                                     <option value="">分配给...</option>
                                     {staffList.map(s => (<option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 4}>{s.name} ({getStaffWindowCount(s.id)}/4)</option>))}
@@ -416,6 +445,92 @@ export const CloudMachines: React.FC<Props> = ({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </CyberCard>
+      )}
+
+      {/* 采购记录 */}
+      {activeTab === 'records' && (
+        <CyberCard title="采购记录" icon={<FileText size={20} />}>
+          {purchases.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">暂无采购记录</div>
+          ) : (
+            <div className="space-y-3">
+              {/* 统计 */}
+              <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-black/30 rounded border border-cyber-primary/20">
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">采购次数</div>
+                  <div className="text-xl font-mono text-cyber-primary">{purchases.length}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">总采购量</div>
+                  <div className="text-xl font-mono text-cyber-accent">{formatWan(purchases.reduce((s, p) => s + p.amount, 0))}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400">总成本</div>
+                  <div className="text-xl font-mono text-green-400">¥{purchases.reduce((s, p) => s + p.cost, 0).toFixed(2)}</div>
+                </div>
+              </div>
+              
+              {/* 记录列表 */}
+              {purchases.map(p => (
+                <div key={p.id} className="p-4 bg-green-500/10 border border-green-500/30 rounded">
+                  {editingPurchase === p.id ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">日期</label>
+                          <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})}
+                            className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">采购量</label>
+                          <input type="number" value={editForm.amount} onChange={e => setEditForm({...editForm, amount: e.target.value})}
+                            className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">成本 (元)</label>
+                          <input type="number" step="0.01" value={editForm.cost} onChange={e => setEditForm({...editForm, cost: e.target.value})}
+                            className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm" />
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingPurchase(null)} className="px-3 py-1 border border-gray-600 text-gray-400 text-sm flex items-center gap-1">
+                          <X size={14} /> 取消
+                        </button>
+                        <button onClick={() => {
+                          onUpdatePurchase(p.id, { date: editForm.date, amount: parseFloat(editForm.amount), cost: parseFloat(editForm.cost) });
+                          setEditingPurchase(null);
+                          showSuccess('修改成功', '采购记录已更新');
+                        }} className="px-3 py-1 bg-green-500/20 border border-green-500 text-green-400 text-sm flex items-center gap-1">
+                          <Save size={14} /> 保存
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-6">
+                        <div className="text-sm text-gray-400">{p.date}</div>
+                        <div className="font-mono text-cyber-accent">{formatWan(p.amount)}</div>
+                        <div className="font-mono text-green-400">¥{p.cost.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">
+                          单价: ¥{(p.cost / (p.amount / 10000000)).toFixed(2)}/千万
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditingPurchase(p.id); setEditForm({ date: p.date, amount: String(p.amount), cost: String(p.cost) }); }}
+                          className="p-1 text-cyber-primary hover:text-cyber-accent">
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => onDeletePurchase(p.id)} className="p-1 text-red-500 hover:text-red-400">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </CyberCard>

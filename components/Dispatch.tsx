@@ -84,7 +84,6 @@ export const Dispatch: React.FC<Props> = ({
   };
 
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
-  const [deleteWindowId, setDeleteWindowId] = useState<string | null>(null);
 
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
   
@@ -128,16 +127,8 @@ export const Dispatch: React.FC<Props> = ({
   // 删除窗口
   const handleDeleteWindow = (windowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setDeleteWindowId(windowId);
-  };
-
-  // 确认删除窗口
-  const confirmDeleteWindow = () => {
-    if (deleteWindowId) {
-      onDeleteWindow(deleteWindowId);
-      setSelectedWindowIds(selectedWindowIds.filter(id => id !== deleteWindowId));
-      setDeleteWindowId(null);
-    }
+    onDeleteWindow(windowId);
+    setSelectedWindowIds(selectedWindowIds.filter(id => id !== windowId));
   };
 
   // 释放窗口（取消分配）
@@ -504,25 +495,6 @@ export const Dispatch: React.FC<Props> = ({
           </div>
         </form>
       </GlassCard>
-
-      {/* 删除窗口确认弹窗 */}
-      {deleteWindowId && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-cyber-panel border border-red-500 p-6 max-w-md w-full relative">
-            <div className="absolute top-0 left-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
-            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 border border-red-500 flex items-center justify-center text-red-400 font-mono text-lg">!</div>
-              <h3 className="text-xl font-mono text-red-400 tracking-wider">确认删除</h3>
-            </div>
-            <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">确认删除该窗口？此操作不可恢复。</p>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteWindowId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
-              <button onClick={confirmDeleteWindow} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认删除</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 通用弹窗 */}
       <ModalComponent />

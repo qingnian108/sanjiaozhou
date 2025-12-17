@@ -87,12 +87,14 @@ const AdminApp: React.FC<{
     addPurchase,
     addOrder,
     deletePurchase,
+    updatePurchase,
     deleteOrder,
     deleteStaff,
     saveSettings,
     addKookChannel,
     deleteKookChannel,
     addCloudMachine,
+    batchPurchase,
     deleteCloudMachine,
     addCloudWindow,
     deleteCloudWindow,
@@ -195,11 +197,11 @@ const AdminApp: React.FC<{
           </header>
 
           <Routes>
-            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
-            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} adminId={tenantId} onAddMachine={addCloudMachine} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
+            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/records" element={<DataList purchases={purchases} dailyStats={stats.dailyStats} onDeletePurchase={handleDeletePurchase} onDeleteDaily={() => {}} />} />
             <Route path="/reports" element={<Reports dailyStats={stats.dailyStats} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
