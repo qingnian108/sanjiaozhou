@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut } from 'lucide-react';
+import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut, UserPlus } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
 import { useAuth } from './hooks/useAuth';
@@ -14,12 +14,14 @@ import { KookChannels } from './components/KookChannels';
 import { CloudMachines } from './components/CloudMachines';
 import { Login } from './components/Login';
 import { StaffPortal } from './components/StaffPortal';
+import { Friends } from './components/Friends';
 
 const NAV_ITEMS = [
   { path: '/', label: '总览', icon: LayoutDashboard },
   { path: '/dispatch', label: '派单', icon: Send, glow: true },
   { path: '/cloud', label: '云机', icon: Monitor },
   { path: '/staff', label: '员工', icon: Users },
+  { path: '/friends', label: '好友', icon: UserPlus },
   { path: '/kook', label: 'Kook', icon: MessageSquare },
   { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
@@ -66,9 +68,10 @@ const Navigation = ({ onLogout }: { onLogout: () => void }) => {
 
 const AdminApp: React.FC<{ 
   tenantId: string;
+  tenantName: string;
   onLogout: () => void; 
   onCreateStaff: (username: string, password: string, name: string) => Promise<void>;
-}> = ({ tenantId, onLogout, onCreateStaff }) => {
+}> = ({ tenantId, tenantName, onLogout, onCreateStaff }) => {
   const {
     purchases,
     orders,
@@ -197,6 +200,7 @@ const AdminApp: React.FC<{
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
+            <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onRefresh={refreshData} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
           </Routes>
         </main>
@@ -297,7 +301,7 @@ const App: React.FC = () => {
 
   // 管理员显示管理端
   if (isAdmin) {
-    return <AdminApp tenantId={staffInfo.tenantId} onLogout={logout} onCreateStaff={createStaffAccount} />;
+    return <AdminApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} onLogout={logout} onCreateStaff={createStaffAccount} />;
   }
 
   // 员工显示员工端

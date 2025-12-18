@@ -42,3 +42,25 @@ export const settingsApi = {
   get: (tenantId: string) => request(`/settings/${tenantId}`),
   save: (tenantId: string, data: any) => request(`/settings/${tenantId}`, { method: 'POST', body: JSON.stringify(data) })
 };
+
+// 好友相关
+export const friendApi = {
+  search: (username: string) => request(`/search-user/${username}`),
+  sendRequest: (data: { fromId: string; fromName: string; toId: string; toName: string }) =>
+    request('/friend/request', { method: 'POST', body: JSON.stringify(data) }),
+  getRequests: (tenantId: string) => request(`/friend/requests/${tenantId}`),
+  respond: (requestId: string, accept: boolean) =>
+    request('/friend/respond', { method: 'POST', body: JSON.stringify({ requestId, accept }) }),
+  list: (tenantId: string) => request(`/friends/${tenantId}`),
+  delete: (id: string) => request(`/friend/${id}`, { method: 'DELETE' })
+};
+
+// 窗口转让相关
+export const transferApi = {
+  request: (data: any) => request('/transfer/request', { method: 'POST', body: JSON.stringify(data) }),
+  getRequests: (tenantId: string) => request(`/transfer/requests/${tenantId}`),
+  getSent: (tenantId: string) => request(`/transfer/sent/${tenantId}`),
+  respond: (transferId: string, accept: boolean) =>
+    request('/transfer/respond', { method: 'POST', body: JSON.stringify({ transferId, accept }) }),
+  cancel: (id: string) => request(`/transfer/${id}`, { method: 'DELETE' })
+};

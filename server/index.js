@@ -194,6 +194,199 @@ app.post('/api/settings/:tenantId', async (req, res) => {
   }
 });
 
+// ========== 好友系统 ==========
+
+// 好友关系模型
+const FriendSchema = new mongoose.Schema({
+  fromId: String,      // 发起者 tenantId
+  fromName: String,    // 发起者名称
+  toId: String,        // 接收者 tenantId
+  toName: String,      // 接收者名称
+  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Friend = mongoose.model('Friend', FriendSchema);
+
+// 窗口转让模型
+const TransferSchema = new mongoose.Schema({
+  fromTenantId: String,   // 转出方
+  fromTenantName: String,
+  toTenantId: String,     // 接收方
+  toTenantName: String,
+  windowId: String,       // 窗口ID
+  windowInfo: Object,     // 窗口信息快照
+  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Transfer = mongoose.model('Transfer', TransferSchema);
+
+// 搜索用户（通过用户名搜索老板）
+app.get('/api/search-user/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username, role: 'admin' });
+    if (!user) return res.json({ success: false, error: '用户不存在' });
+    res.json({ success: true, user: { id: user._id, username: user.username, name: user.name, tenantId: user.tenantId } });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 发送好友请求
+app.post('/api/friend/request', async (req, res) => {
+  try {
+    const { fromId, fromName, toId, toName } = req.body;
+    if (fromId === toId) return res.json({ success: false, error: '不能添加自己' });
+    
+    // 检查是否已经是好友或已发送请求
+    const existing = await Friend.findOne({
+      $or: [
+        { fromId, toId, status: { $in: ['pending', 'accepted'] } },
+        { fromId: toId, toId: fromId, status: { $in: ['pending', 'accepted'] } }
+      ]
+    });
+    if (existing) {
+      if (existing.status === 'accepted') return res.json({ success: false, error: '已经是好友了' });
+      return res.json({ success: false, error: '已发送过请求' });
+    }
+    
+    const friend = new Friend({ fromId, fromName, toId, toName });
+    await friend.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取好友请求列表（收到的）
+app.get('/api/friend/requests/:tenantId', async (req, res) => {
+  try {
+    const requests = await Friend.find({ toId: req.params.tenantId, status: 'pending' });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 处理好友请求
+app.post('/api/friend/respond', async (req, res) => {
+  try {
+    const { requestId, accept } = req.body;
+    await Friend.findByIdAndUpdate(requestId, { status: accept ? 'accepted' : 'rejected' });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取好友列表
+app.get('/api/friends/:tenantId', async (req, res) => {
+  try {
+    const tenantId = req.params.tenantId;
+    const friends = await Friend.find({
+      $or: [{ fromId: tenantId }, { toId: tenantId }],
+      status: 'accepted'
+    });
+    
+    const friendList = friends.map(f => {
+      if (f.fromId === tenantId) {
+        return { id: f._id, tenantId: f.toId, name: f.toName };
+      } else {
+        return { id: f._id, tenantId: f.fromId, name: f.fromName };
+      }
+    });
+    res.json({ success: true, data: friendList });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 删除好友
+app.delete('/api/friend/:id', async (req, res) => {
+  try {
+    await Friend.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 窗口转让 ==========
+
+// 发起窗口转让
+app.post('/api/transfer/request', async (req, res) => {
+  try {
+    const { fromTenantId, fromTenantName, toTenantId, toTenantName, windowId, windowInfo } = req.body;
+    
+    // 检查是否是好友
+    const isFriend = await Friend.findOne({
+      $or: [
+        { fromId: fromTenantId, toId: toTenantId, status: 'accepted' },
+        { fromId: toTenantId, toId: fromTenantId, status: 'accepted' }
+      ]
+    });
+    if (!isFriend) return res.json({ success: false, error: '只能转让给好友' });
+    
+    const transfer = new Transfer({ fromTenantId, fromTenantName, toTenantId, toTenantName, windowId, windowInfo });
+    await transfer.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取转让请求（收到的）
+app.get('/api/transfer/requests/:tenantId', async (req, res) => {
+  try {
+    const requests = await Transfer.find({ toTenantId: req.params.tenantId, status: 'pending' });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取我发起的转让
+app.get('/api/transfer/sent/:tenantId', async (req, res) => {
+  try {
+    const requests = await Transfer.find({ fromTenantId: req.params.tenantId, status: 'pending' });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 处理转让请求
+app.post('/api/transfer/respond', async (req, res) => {
+  try {
+    const { transferId, accept } = req.body;
+    const transfer = await Transfer.findById(transferId);
+    if (!transfer) return res.json({ success: false, error: '转让请求不存在' });
+    
+    if (accept) {
+      // 更新窗口的 tenantId
+      await Data.findByIdAndUpdate(transfer.windowId, { 
+        tenantId: transfer.toTenantId,
+        'data.userId': null  // 清除分配的员工
+      });
+    }
+    
+    transfer.status = accept ? 'accepted' : 'rejected';
+    await transfer.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 取消转让请求
+app.delete('/api/transfer/:id', async (req, res) => {
+  try {
+    await Transfer.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 const PORT = 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`服务器运行在 http://0.0.0.0:${PORT}`);
