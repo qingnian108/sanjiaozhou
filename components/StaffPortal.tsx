@@ -51,7 +51,9 @@ export const StaffPortal: React.FC<Props> = ({
       setOrderSavedWindows(prev => ({ ...prev, [activeOrderId]: saved }));
     }
   };
-  const [dateFilter, setDateFilter] = useState('');
+  const [periodFilter, setPeriodFilter] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [pauseAmount, setPauseAmount] = useState('');
   const [showPauseModal, setShowPauseModal] = useState<string | null>(null);
   const [showWindowSelectModal, setShowWindowSelectModal] = useState(false);
@@ -83,20 +85,46 @@ export const StaffPortal: React.FC<Props> = ({
   // 已完成的订单
   const completedOrders = useMemo(() => {
     let completed = myOrders.filter(o => o.status === 'completed');
-    if (dateFilter) {
-      completed = completed.filter(o => o.date === dateFilter);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    if (periodFilter === 'today') {
+      completed = completed.filter(o => o.date === todayStr);
+    } else if (periodFilter === 'week') {
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekAgoStr = weekAgo.toISOString().split('T')[0];
+      completed = completed.filter(o => o.date >= weekAgoStr);
+    } else if (periodFilter === 'month') {
+      const monthAgo = new Date(today);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      const monthAgoStr = monthAgo.toISOString().split('T')[0];
+      completed = completed.filter(o => o.date >= monthAgoStr);
+    } else if (periodFilter === 'custom' && customStartDate && customEndDate) {
+      completed = completed.filter(o => o.date >= customStartDate && o.date <= customEndDate);
     }
     return completed.sort((a, b) => b.date.localeCompare(a.date));
-  }, [myOrders, dateFilter]);
+  }, [myOrders, periodFilter, customStartDate, customEndDate]);
+  
+  // 筛选后的统计
+  const filteredStats = useMemo(() => {
+    const totalAmount = completedOrders.reduce((sum, o) => sum + o.amount, 0);
+    const totalLoss = completedOrders.reduce((sum, o) => sum + (o.loss || 0), 0);
+    const totalConsumed = completedOrders.reduce((sum, o) => sum + (o.totalConsumed || o.amount * 10000), 0);
+    const income = totalAmount * settings.employeeCostRate / 1000;
+    return { totalAmount, totalLoss, totalConsumed, income, count: completedOrders.length };
+  }, [completedOrders, settings.employeeCostRate]);
 
-  // 我的统计
+  // 今日统计
   const myStats = useMemo(() => {
-    const completed = myOrders.filter(o => o.status === 'completed');
-    const totalAmount = completed.reduce((sum, o) => sum + o.amount, 0);
-    const totalLoss = completed.reduce((sum, o) => sum + (o.loss || 0), 0);
-    const totalConsumed = completed.reduce((sum, o) => sum + (o.totalConsumed || o.amount), 0);
-    const laborCost = totalAmount * settings.employeeCostRate / 1000;
-    return { orderCount: completed.length, totalAmount, totalLoss, totalConsumed, laborCost };
+    const today = new Date().toISOString().split('T')[0];
+    const todayCompleted = myOrders.filter(o => o.status === 'completed' && o.date === today);
+    const orderCount = todayCompleted.length;
+    const totalAmount = todayCompleted.reduce((sum, o) => sum + o.amount, 0);
+    const totalLoss = todayCompleted.reduce((sum, o) => sum + (o.loss || 0), 0);
+    const todayIncome = totalAmount * settings.employeeCostRate / 1000;
+    
+    return { orderCount, totalAmount, totalLoss, todayIncome };
   }, [myOrders, settings.employeeCostRate]);
 
   // 我的云机窗口
@@ -105,9 +133,21 @@ export const StaffPortal: React.FC<Props> = ({
   // 空闲窗口（可申请的）
   const freeWindows = useMemo(() => cloudWindows.filter(w => !w.userId), [cloudWindows]);
 
+  const getMachine = (machineId: string) => {
+    return cloudMachines.find(m => m.id === machineId);
+  };
+  
   const getMachineName = (machineId: string) => {
-    const machine = cloudMachines.find(m => m.id === machineId);
+    const machine = getMachine(machineId);
     return machine ? `${machine.phone} (${machine.platform})` : '未知';
+  };
+  
+  const getMachineLoginInfo = (machineId: string) => {
+    const machine = getMachine(machineId);
+    if (!machine) return null;
+    return machine.loginType === 'password' 
+      ? `密码: ${machine.loginPassword || ''}` 
+      : '验证码登录';
   };
 
   // 处理暂停订单
@@ -158,9 +198,10 @@ export const StaffPortal: React.FC<Props> = ({
     if (!order.windowSnapshots) return;
     
     const results: WindowResult[] = order.windowSnapshots.map(snap => {
+      // 用户输入的是万，需要转换成实际数量（* 10000）
       // 如果用户没有填写，默认使用开始余额（即没有消耗）
       const endBalance = windowBalances[snap.windowId] 
-        ? parseFloat(windowBalances[snap.windowId]) 
+        ? parseFloat(windowBalances[snap.windowId]) * 10000
         : snap.startBalance;
       return {
         windowId: snap.windowId,
@@ -323,11 +364,12 @@ export const StaffPortal: React.FC<Props> = ({
                 <div className="text-2xl font-mono text-cyber-accent">{activeOrder.amount} 万</div>
               </div>
               
-              <div className="text-sm text-cyber-primary font-mono mb-2">请填写每个窗口的剩余哈夫币 (不填则默认无消耗):</div>
+              <div className="text-sm text-cyber-primary font-mono mb-2">请填写每个窗口的剩余哈夫币（万）(不填则默认无消耗):</div>
               <div className="space-y-3 mb-6">
                 {activeOrder.windowSnapshots?.map(snap => {
                   const inputValue = windowBalances[snap.windowId] || '';
-                  const endBalance = inputValue ? parseFloat(inputValue) : snap.startBalance;
+                  // 用户输入的是万，需要转换成实际数量
+                  const endBalance = inputValue ? parseFloat(inputValue) * 10000 : snap.startBalance;
                   const consumed = snap.startBalance - endBalance;
                   const isSaved = savedWindows[snap.windowId];
                   return (
@@ -382,8 +424,9 @@ export const StaffPortal: React.FC<Props> = ({
                     <div className="text-xs text-gray-400">总消耗 (万)</div>
                     <div className="font-mono text-lg">
                       {toWan(activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                        // 用户输入的是万，需要转换成实际数量
                         const end = windowBalances[snap.windowId] 
-                          ? parseFloat(windowBalances[snap.windowId]) 
+                          ? parseFloat(windowBalances[snap.windowId]) * 10000
                           : snap.startBalance;
                         return sum + (snap.startBalance - end);
                       }, 0) || 0)}
@@ -398,8 +441,9 @@ export const StaffPortal: React.FC<Props> = ({
                     <div className="font-mono text-lg text-red-400">
                       {(() => {
                         const totalConsumed = activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                          // 用户输入的是万，需要转换成实际数量
                           const end = windowBalances[snap.windowId] 
-                            ? parseFloat(windowBalances[snap.windowId]) 
+                            ? parseFloat(windowBalances[snap.windowId]) * 10000
                             : snap.startBalance;
                           return sum + (snap.startBalance - end);
                         }, 0) || 0;
@@ -425,12 +469,12 @@ export const StaffPortal: React.FC<Props> = ({
         )}
 
 
-        {/* 统计卡片 */}
+        {/* 今日统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatBox label="完成订单" value={myStats.orderCount.toString()} />
-          <StatBox label="总金额(万)" value={myStats.totalAmount.toString()} />
-          <StatBox label="总损耗(万)" value={toWan(myStats.totalLoss)} trend="down" />
-          <StatBox label="劳动收入(¥)" value={myStats.laborCost.toFixed(2)} trend="up" />
+          <StatBox label="今日订单" value={myStats.orderCount.toString()} />
+          <StatBox label="今日金额(万)" value={myStats.totalAmount.toString()} />
+          <StatBox label="今日损耗(万)" value={toWan(myStats.totalLoss)} trend="down" />
+          <StatBox label="今日收入(¥)" value={myStats.todayIncome.toFixed(2)} trend="up" />
         </div>
 
         {/* 我的云机窗口 */}
@@ -452,24 +496,32 @@ export const StaffPortal: React.FC<Props> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {myWindows.map(window => (
-                <div key={window.id} className="flex justify-between items-center p-3 bg-black/30 rounded border border-cyber-primary/20 group">
-                  <div>
-                    <div className="font-mono">窗口 #{window.windowNumber}</div>
-                    <div className="text-sm text-gray-400">{getMachineName(window.machineId)}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className={`font-mono flex items-center gap-1 ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
-                      <Coins size={14} />
-                      {formatWan(window.goldBalance)}
-                      {window.goldBalance < 1000000 && <span className="text-xs">(低)</span>}
+                <div key={window.id} className="p-3 bg-black/30 rounded border border-cyber-primary/20 group">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-mono">窗口 #{window.windowNumber}</div>
+                      <div className="text-sm text-gray-400">{getMachineName(window.machineId)}</div>
                     </div>
-                    <button
-                      onClick={() => handleReleaseWindow(window.id)}
-                      className="px-3 py-1 text-xs bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/30 hover:border-yellow-500 rounded transition-all"
-                    >
-                      释放窗口
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <div className={`font-mono flex items-center gap-1 ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
+                        <Coins size={14} />
+                        {formatWan(window.goldBalance)}
+                        {window.goldBalance < 1000000 && <span className="text-xs">(低)</span>}
+                      </div>
+                      <button
+                        onClick={() => handleReleaseWindow(window.id)}
+                        className="px-3 py-1 text-xs bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/30 hover:border-yellow-500 rounded transition-all"
+                      >
+                        释放窗口
+                      </button>
+                    </div>
                   </div>
+                  {getMachineLoginInfo(window.machineId) && (
+                    <div className="mt-2 pt-2 border-t border-gray-700/50 text-xs">
+                      <span className="text-gray-500">登录方式: </span>
+                      <span className="text-cyber-primary">{getMachineLoginInfo(window.machineId)}</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -561,22 +613,54 @@ export const StaffPortal: React.FC<Props> = ({
 
         {/* 已完成订单 */}
         <GlassCard>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-cyber-primary">
-              <FileText size={20} />
-              <h2 className="font-mono text-lg">已完成订单</h2>
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyber-primary">
+                <FileText size={20} />
+                <h2 className="font-mono text-lg">已完成订单</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-gray-400" />
+                <select
+                  value={periodFilter}
+                  onChange={e => setPeriodFilter(e.target.value as any)}
+                  className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm"
+                >
+                  <option value="today">今天</option>
+                  <option value="week">本周</option>
+                  <option value="month">本月</option>
+                  <option value="all">全部</option>
+                  <option value="custom">自定义</option>
+                </select>
+                {periodFilter === 'custom' && (
+                  <>
+                    <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)}
+                      className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm" />
+                    <span className="text-gray-500">-</span>
+                    <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)}
+                      className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm" />
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Filter size={14} className="text-gray-400" />
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={e => setDateFilter(e.target.value)}
-                className="bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-2 py-1 text-sm"
-              />
-              {dateFilter && (
-                <button onClick={() => setDateFilter('')} className="text-xs text-gray-400 hover:text-white">清除</button>
-              )}
+            {/* 统计汇总 */}
+            <div className="grid grid-cols-4 gap-3 p-3 bg-black/30 rounded border border-cyber-primary/20">
+              <div className="text-center">
+                <div className="text-xs text-gray-400">订单数</div>
+                <div className="font-mono text-lg text-white">{filteredStats.count}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-400">总金额(万)</div>
+                <div className="font-mono text-lg text-cyber-accent">{filteredStats.totalAmount}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-400">总损耗(万)</div>
+                <div className="font-mono text-lg text-red-400">{toWan(filteredStats.totalLoss)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-400">收入(¥)</div>
+                <div className="font-mono text-lg text-green-400">{filteredStats.income.toFixed(2)}</div>
+              </div>
             </div>
           </div>
           {completedOrders.length === 0 ? (
@@ -591,12 +675,14 @@ export const StaffPortal: React.FC<Props> = ({
                     <th className="py-2 px-2 text-cyber-primary font-mono">消耗(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">损耗(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">损耗比</th>
+                    <th className="py-2 px-2 text-cyber-primary font-mono">收入(¥)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {completedOrders.map(order => {
                     const consumed = order.totalConsumed || order.amount * 10000;
                     const lossRatio = consumed > 0 ? ((order.loss || 0) / consumed * 100).toFixed(2) : '0';
+                    const income = order.amount * settings.employeeCostRate / 1000;
                     return (
                     <tr key={order.id} className="border-b border-gray-800">
                       <td className="py-2 px-2 font-mono">{order.date}</td>
@@ -604,6 +690,7 @@ export const StaffPortal: React.FC<Props> = ({
                       <td className="py-2 px-2">{toWan(consumed)}</td>
                       <td className="py-2 px-2 text-red-400">{order.loss > 0 ? toWan(order.loss) : '-'}</td>
                       <td className="py-2 px-2">{lossRatio}%</td>
+                      <td className="py-2 px-2 text-green-400">{income.toFixed(2)}</td>
                     </tr>
                     );
                   })}

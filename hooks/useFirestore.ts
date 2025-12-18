@@ -93,6 +93,43 @@ export function useFirestore(tenantId: string | null) {
   useEffect(() => {
     if (tenantId) {
       loadData();
+      
+      const watchers: any[] = [];
+      
+      // 创建监听器的通用函数
+      const createWatcher = (collection: string, setter: (data: any[]) => void) => {
+        try {
+          const watcher = db.collection(collection)
+            .where({ tenantId })
+            .watch({
+              onChange: (snapshot: any) => {
+                console.log(`${collection} changed:`, snapshot.docChanges?.length || 0, 'changes');
+                if (snapshot.docs) {
+                  setter(snapshot.docs.map((d: any) => ({ id: d._id, ...d })));
+                }
+              },
+              onError: (err: any) => {
+                console.error(`Watch ${collection} error:`, err);
+              }
+            });
+          watchers.push(watcher);
+        } catch (e) {
+          console.log(`Watch ${collection} not supported`);
+        }
+      };
+      
+      // 监听所有需要实时同步的集合
+      createWatcher('orders', setOrders);
+      createWatcher('windowRequests', setWindowRequests);
+      createWatcher('cloudWindows', setCloudWindows);
+      createWatcher('cloudMachines', setCloudMachines);
+      createWatcher('staff', setStaffList);
+      createWatcher('kookChannels', setKookChannels);
+      createWatcher('purchases', setPurchases);
+      
+      return () => {
+        watchers.forEach(w => w?.close());
+      };
     } else {
       setLoading(false);
     }

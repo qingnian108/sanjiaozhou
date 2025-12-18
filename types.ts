@@ -110,6 +110,8 @@ export interface CloudMachine {
   id: string;
   phone: string;
   platform: string; // 平台（自定义）
+  loginType?: 'password' | 'code'; // 登录方式：密码 | 验证码
+  loginPassword?: string; // 登录密码（密码登录时）
 }
 
 // 云机窗口

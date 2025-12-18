@@ -82,17 +82,52 @@ export const CloudMachines: React.FC<Props> = ({
   const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const [windowNumber, setWindowNumber] = useState('');
   const [windowGold, setWindowGold] = useState('');
+  const [windowCost, setWindowCost] = useState(''); // 添加窗口时的采购成本
+  
+  // 云机管理中的批量添加
+  const [machBatchNames, setMachBatchNames] = useState('');
+  const [machBatchGold, setMachBatchGold] = useState('');
+  const [machBatchCost, setMachBatchCost] = useState('');
   
   // 云机采购表单
   const today = new Date().toISOString().split('T')[0];
   const [purchasePhone, setPurchasePhone] = useState('');
   const [purchasePlatform, setPurchasePlatform] = useState('');
+  const [purchaseLoginType, setPurchaseLoginType] = useState<'password' | 'code'>('code');
+  const [purchaseLoginPassword, setPurchaseLoginPassword] = useState('');
   const [purchaseCost, setPurchaseCost] = useState('');
   const [purchaseWindows, setPurchaseWindows] = useState<NewWindow[]>([{ windowNumber: '', goldBalance: '' }]);
+  
+  // 批量添加窗口
+  const [batchWindowNames, setBatchWindowNames] = useState('');
+  const [batchWindowGold, setBatchWindowGold] = useState('');
 
   // 添加窗口行
   const addWindowRow = () => {
     setPurchaseWindows([...purchaseWindows, { windowNumber: '', goldBalance: '' }]);
+  };
+  
+  // 批量添加窗口
+  const handleBatchAddWindows = () => {
+    if (!batchWindowNames.trim() || !batchWindowGold.trim()) return;
+    // 支持逗号、空格、换行分隔
+    const names = batchWindowNames.split(/[,，\s\n]+/).filter(n => n.trim());
+    if (names.length === 0) return;
+    
+    const newWindows = names.map(name => ({
+      windowNumber: name.trim(),
+      goldBalance: batchWindowGold
+    }));
+    
+    // 如果当前只有一个空窗口，替换它；否则追加
+    if (purchaseWindows.length === 1 && !purchaseWindows[0].windowNumber && !purchaseWindows[0].goldBalance) {
+      setPurchaseWindows(newWindows);
+    } else {
+      setPurchaseWindows([...purchaseWindows, ...newWindows]);
+    }
+    
+    setBatchWindowNames('');
+    setBatchWindowGold('');
   };
 
   // 删除窗口行
@@ -139,7 +174,12 @@ export const CloudMachines: React.FC<Props> = ({
     } : undefined;
     
     await onBatchPurchase(
-      { phone: purchasePhone, platform: purchasePlatform },
+      { 
+        phone: purchasePhone, 
+        platform: purchasePlatform,
+        loginType: purchaseLoginType,
+        loginPassword: purchaseLoginType === 'password' ? purchaseLoginPassword : undefined
+      },
       windowsData,
       purchaseData
     );
@@ -147,6 +187,8 @@ export const CloudMachines: React.FC<Props> = ({
     // 重置表单
     setPurchasePhone('');
     setPurchasePlatform('');
+    setPurchaseLoginType('code');
+    setPurchaseLoginPassword('');
     setPurchaseCost('');
     setPurchaseWindows([{ windowNumber: '', goldBalance: '' }]);
     setActiveTab('machines');
@@ -155,9 +197,48 @@ export const CloudMachines: React.FC<Props> = ({
 
   const handleAddWindow = (machineId: string) => {
     if (!windowNumber) return;
-    onAddWindow({ machineId, windowNumber, goldBalance: parseFloat(windowGold) || 0, userId: null });
+    const goldBalance = parseFloat(windowGold) || 0;
+    onAddWindow({ machineId, windowNumber, goldBalance, userId: null });
+    // 如果有成本，同时添加采购记录
+    if (windowCost && parseFloat(windowCost) > 0) {
+      onAddPurchase({
+        date: today,
+        amount: goldBalance,
+        cost: parseFloat(windowCost)
+      });
+    }
     setWindowNumber('');
     setWindowGold('');
+    setWindowCost('');
+  };
+  
+  // 批量添加窗口到已有云机
+  const handleBatchAddToMachine = async (machineId: string) => {
+    if (!machBatchNames.trim() || !machBatchGold.trim()) return;
+    const names = machBatchNames.split(/[,，\s\n]+/).filter(n => n.trim());
+    if (names.length === 0) return;
+    
+    const goldBalance = parseFloat(machBatchGold) || 0;
+    const totalGold = goldBalance * names.length;
+    
+    // 添加所有窗口
+    for (const name of names) {
+      onAddWindow({ machineId, windowNumber: name.trim(), goldBalance, userId: null });
+    }
+    
+    // 如果有成本，添加采购记录
+    if (machBatchCost && parseFloat(machBatchCost) > 0) {
+      onAddPurchase({
+        date: today,
+        amount: totalGold,
+        cost: parseFloat(machBatchCost)
+      });
+    }
+    
+    setMachBatchNames('');
+    setMachBatchGold('');
+    setMachBatchCost('');
+    showSuccess('添加成功', `已添加 ${names.length} 个窗口`);
   };
 
   const getStaffName = (staffId: string | null) => {
@@ -190,6 +271,11 @@ export const CloudMachines: React.FC<Props> = ({
             ${activeTab === 'purchase' ? 'bg-cyber-accent/10 border-cyber-accent text-cyber-accent' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
           <ShoppingCart size={20} /> 云机采购
         </button>
+        <button onClick={() => setActiveTab('machines')}
+          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
+            ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
+          <Monitor size={20} /> 云机管理
+        </button>
         <button onClick={() => setActiveTab('requests')}
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3 relative
             ${activeTab === 'requests' ? 'bg-yellow-500/10 border-yellow-500 text-yellow-400' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
@@ -199,11 +285,6 @@ export const CloudMachines: React.FC<Props> = ({
               {pendingRequests.length}
             </span>
           )}
-        </button>
-        <button onClick={() => setActiveTab('machines')}
-          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
-            ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
-          <Monitor size={20} /> 云机管理
         </button>
         <button onClick={() => setActiveTab('records')}
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
@@ -216,11 +297,26 @@ export const CloudMachines: React.FC<Props> = ({
       {activeTab === 'purchase' && (
         <CyberCard title="云机采购" icon={<ShoppingCart size={20} />}>
           <form onSubmit={handlePurchaseSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <CyberInput label="手机号" type="text" value={purchasePhone} placeholder="输入手机号"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchasePhone(e.target.value)} required />
               <CyberInput label="平台" type="text" value={purchasePlatform} placeholder="输入平台名称"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchasePlatform(e.target.value)} required />
+              <div className="mb-4">
+                <label className="block text-cyber-primary text-xs font-mono mb-2 uppercase tracking-wider">{`> 登录方式`}</label>
+                <select
+                  value={purchaseLoginType}
+                  onChange={(e) => setPurchaseLoginType(e.target.value as 'password' | 'code')}
+                  className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2"
+                >
+                  <option value="code">验证码登录</option>
+                  <option value="password">密码登录</option>
+                </select>
+              </div>
+              {purchaseLoginType === 'password' && (
+                <CyberInput label="登录密码" type="text" value={purchaseLoginPassword} placeholder="输入密码"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchaseLoginPassword(e.target.value)} />
+              )}
               <CyberInput label="采购总价 (元)" type="number" step="0.01" value={purchaseCost} placeholder="输入总价"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchaseCost(e.target.value)} />
             </div>
@@ -228,9 +324,33 @@ export const CloudMachines: React.FC<Props> = ({
             <div className="border border-cyber-accent/30 p-4 rounded">
               <div className="flex justify-between items-center mb-4">
                 <div className="text-cyber-accent font-mono">窗口列表</div>
-                <button type="button" onClick={addWindowRow} className="px-3 py-1 bg-cyber-accent/20 border border-cyber-accent text-cyber-accent text-sm flex items-center gap-1">
-                  <Plus size={14} /> 添加窗口
-                </button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={addWindowRow} className="px-3 py-1 bg-cyber-accent/20 border border-cyber-accent text-cyber-accent text-sm flex items-center gap-1">
+                    <Plus size={14} /> 添加窗口
+                  </button>
+                </div>
+              </div>
+              
+              {/* 批量添加 */}
+              <div className="mb-4 p-3 bg-black/30 rounded border border-cyber-primary/20">
+                <div className="text-xs text-cyber-primary font-mono mb-2">批量添加（窗口名用逗号或空格分隔）</div>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <input type="text" value={batchWindowNames} placeholder="如: 1,2,3,4,5 或 窗口1 窗口2 窗口3"
+                      onChange={e => setBatchWindowNames(e.target.value)}
+                      className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                  </div>
+                  <div className="w-32">
+                    <input type="number" value={batchWindowGold} placeholder="统一余额"
+                      onChange={e => setBatchWindowGold(e.target.value)}
+                      className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                  </div>
+                  <button type="button" onClick={handleBatchAddWindows} 
+                    disabled={!batchWindowNames.trim() || !batchWindowGold.trim()}
+                    className="px-3 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm disabled:opacity-50">
+                    批量添加
+                  </button>
+                </div>
               </div>
               
               <div className="space-y-3">
@@ -300,7 +420,12 @@ export const CloudMachines: React.FC<Props> = ({
                         <Server className="text-cyber-primary" size={28} />
                         <div>
                           <div className="font-mono text-xl">{machine.phone}</div>
-                          <div className="text-base text-gray-400">{machine.platform}</div>
+                          <div className="flex items-center gap-2 text-base text-gray-400">
+                            <span>{machine.platform}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded ${machine.loginType === 'password' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
+                              {machine.loginType === 'password' ? `密码: ${machine.loginPassword || ''}` : '验证码'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
@@ -323,6 +448,7 @@ export const CloudMachines: React.FC<Props> = ({
 
                     {isExpanded && (
                       <div className="p-4 border-t border-cyber-primary/20">
+                        {/* 单个添加 */}
                         <div className="flex gap-4 mb-4 items-end">
                           <div className="flex-1">
                             <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 窗口号`}</label>
@@ -334,10 +460,42 @@ export const CloudMachines: React.FC<Props> = ({
                             <input type="number" value={windowGold} onChange={e => setWindowGold(e.target.value)} placeholder="输入哈夫币"
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
+                          <div className="flex-1">
+                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 采购成本 (元)`}</label>
+                            <input type="number" step="0.01" value={windowCost} onChange={e => setWindowCost(e.target.value)} placeholder="输入成本"
+                              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                          </div>
                           <button onClick={() => handleAddWindow(machine.id)} disabled={!windowNumber}
                             className="px-4 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm disabled:opacity-50">
                             <Plus size={16} />
                           </button>
+                        </div>
+                        
+                        {/* 批量添加 */}
+                        <div className="mb-4 p-3 bg-black/30 rounded border border-cyber-accent/20">
+                          <div className="text-xs text-cyber-accent font-mono mb-2">批量添加（窗口名用逗号或空格分隔）</div>
+                          <div className="flex gap-2 items-end">
+                            <div className="flex-1">
+                              <input type="text" value={machBatchNames} placeholder="如: 1,2,3,4,5"
+                                onChange={e => setMachBatchNames(e.target.value)}
+                                className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                            </div>
+                            <div className="w-28">
+                              <input type="number" value={machBatchGold} placeholder="统一余额"
+                                onChange={e => setMachBatchGold(e.target.value)}
+                                className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                            </div>
+                            <div className="w-24">
+                              <input type="number" step="0.01" value={machBatchCost} placeholder="总成本"
+                                onChange={e => setMachBatchCost(e.target.value)}
+                                className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                            </div>
+                            <button onClick={() => handleBatchAddToMachine(machine.id)} 
+                              disabled={!machBatchNames.trim() || !machBatchGold.trim()}
+                              className="px-3 py-2 bg-cyber-accent/20 border border-cyber-accent text-cyber-accent text-sm disabled:opacity-50">
+                              批量添加
+                            </button>
+                          </div>
                         </div>
 
                         {machineWindows.length === 0 ? (

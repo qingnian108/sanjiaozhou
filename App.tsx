@@ -1,16 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Send, Database, BarChart3, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut } from 'lucide-react';
+import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
 import { useAuth } from './hooks/useAuth';
-import { useCyberModal } from './components/CyberUI';
 
 // Pages
 import { Dashboard } from './components/Dashboard';
 import { Dispatch } from './components/Dispatch';
-import { DataList } from './components/DataList';
-import { Reports } from './components/Reports';
 import { SettingsPage } from './components/Settings';
 import { StaffManager } from './components/StaffManager';
 import { KookChannels } from './components/KookChannels';
@@ -24,8 +21,6 @@ const NAV_ITEMS = [
   { path: '/cloud', label: '云机', icon: Monitor },
   { path: '/staff', label: '员工', icon: Users },
   { path: '/kook', label: 'Kook', icon: MessageSquare },
-  { path: '/records', label: '明细', icon: Database },
-  { path: '/reports', label: '分析', icon: BarChart3 },
   { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
 
@@ -202,8 +197,6 @@ const AdminApp: React.FC<{
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
-            <Route path="/records" element={<DataList purchases={purchases} dailyStats={stats.dailyStats} onDeletePurchase={handleDeletePurchase} onDeleteDaily={() => {}} />} />
-            <Route path="/reports" element={<Reports dailyStats={stats.dailyStats} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
           </Routes>
         </main>

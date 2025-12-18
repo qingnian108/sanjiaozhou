@@ -206,44 +206,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
               {pendingOrders.map(order => (
                 <div 
                   key={order.id} 
-                  className={`p-3 rounded border flex justify-between items-center ${
+                  className={`p-3 rounded border ${
                     order.status === 'paused'
                       ? 'bg-orange-500/10 border-orange-500/30'
                       : 'bg-yellow-500/10 border-yellow-500/30'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${
-                      order.status === 'paused' ? 'bg-orange-400' : 'bg-yellow-400 animate-pulse'
-                    }`} />
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">{order.date}</div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        order.status === 'paused' ? 'bg-orange-400' : 'bg-yellow-400 animate-pulse'
+                      }`} />
                       <span className="font-mono text-white">{getStaffName(order.staffId)}</span>
-                      <span className="text-gray-500 mx-2">|</span>
-                      <span className="text-cyber-accent font-mono">{order.amount} 万</span>
-                      <span className="text-green-400 font-mono ml-2">¥{getOrderRevenue(order).toFixed(2)}</span>
-                      {order.status === 'paused' && (
-                        <span className="text-xs text-orange-400 ml-2">
-                          (已完成 {order.completedAmount || 0} 万)
-                        </span>
-                      )}
+                      <span className="text-xs text-gray-500">{order.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        order.status === 'paused'
+                          ? 'bg-orange-500/20 text-orange-400'
+                          : 'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {order.status === 'paused' ? '暂停' : '进行中'}
+                      </span>
+                      <button onClick={() => setDeleteOrderId(order.id)} className="p-1 text-red-400 hover:bg-red-500/20 rounded" title="删除订单">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      order.status === 'paused'
-                        ? 'bg-orange-500/20 text-orange-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
-                    }`}>
-                      {order.status === 'paused' ? '暂停' : '进行中'}
-                    </span>
-                    <button
-                      onClick={() => setDeleteOrderId(order.id)}
-                      className="p-1 text-red-400 hover:bg-red-500/20 rounded"
-                      title="删除订单"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                  <div className="flex items-center gap-4 mt-2 pl-4 text-sm">
+                    <span className="text-cyber-accent font-mono">{order.amount} 万</span>
+                    <span className="text-green-400 font-mono">收入 ¥{getOrderRevenue(order).toFixed(0)}</span>
+                    {order.status === 'paused' && (
+                      <span className="text-orange-400 text-xs">(已完成 {order.completedAmount || 0} 万)</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -311,7 +306,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
           )}
           
           {/* 统计 */}
-          <div className="grid grid-cols-4 gap-2 mb-4">
+          <div className="grid grid-cols-5 gap-2 mb-4">
             <div className="bg-green-500/10 border border-green-500/30 p-2 rounded text-center">
               <div className="text-xs text-green-400">订单</div>
               <div className="text-lg font-mono text-green-400">{completedStats.total}</div>
@@ -319,6 +314,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             <div className="bg-cyber-accent/10 border border-cyber-accent/30 p-2 rounded text-center">
               <div className="text-xs text-cyber-accent">金额</div>
               <div className="text-lg font-mono text-cyber-accent">{completedStats.totalAmount}万</div>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/30 p-2 rounded text-center">
+              <div className="text-xs text-red-400">损耗</div>
+              <div className="text-lg font-mono text-red-400">{(completedStats.totalLoss / 10000).toFixed(0)}万</div>
             </div>
             <div className="bg-blue-500/10 border border-blue-500/30 p-2 rounded text-center">
               <div className="text-xs text-blue-400">收入</div>
@@ -335,34 +334,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
               {completedOrders.map(order => (
                 <div 
                   key={order.id} 
-                  className="p-3 rounded border flex justify-between items-center bg-green-500/10 border-green-500/30"
+                  className="p-3 rounded border bg-green-500/10 border-green-500/30"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-green-400" />
-                    <div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-400" />
                       <span className="font-mono text-white">{getStaffName(order.staffId)}</span>
-                      <span className="text-gray-500 mx-2">|</span>
-                      <span className="text-cyber-accent font-mono">{order.amount} 万</span>
-                      <span className="text-blue-400 font-mono ml-2">¥{getOrderRevenue(order).toFixed(0)}</span>
-                      <span className={`font-mono ml-2 ${getOrderProfit(order) >= 0 ? 'text-purple-400' : 'text-red-400'}`}>
-                        利润 ¥{getOrderProfit(order).toFixed(0)}
-                      </span>
-                      {order.loss > 0 && (
-                        <span className="text-xs text-red-400 ml-2">(损耗 {(order.loss / 10000).toFixed(0)} 万)</span>
-                      )}
+                      <span className="text-xs text-gray-500">{order.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">已完成</span>
+                      <button onClick={() => setDeleteOrderId(order.id)} className="p-1 text-red-400 hover:bg-red-500/20 rounded" title="删除订单">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">
-                      已完成
+                  <div className="flex items-center gap-4 mt-2 pl-4 text-sm">
+                    <span className="text-cyber-accent font-mono">{order.amount} 万</span>
+                    <span className="text-blue-400 font-mono">收入 ¥{getOrderRevenue(order).toFixed(0)}</span>
+                    <span className={`font-mono ${getOrderProfit(order) >= 0 ? 'text-purple-400' : 'text-red-400'}`}>
+                      利润 ¥{getOrderProfit(order).toFixed(0)}
                     </span>
-                    <button
-                      onClick={() => setDeleteOrderId(order.id)}
-                      className="p-1 text-red-400 hover:bg-red-500/20 rounded"
-                      title="删除订单"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {order.loss > 0 && (
+                      <span className="text-red-400 text-xs">(损耗 {(order.loss / 10000).toFixed(0)} 万)</span>
+                    )}
                   </div>
                 </div>
               ))}
