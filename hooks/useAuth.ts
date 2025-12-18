@@ -1,202 +1,128 @@
 import { useState, useEffect } from 'react';
-import { auth, db, signInAnonymously } from '../cloudbase';
-import { Staff } from '../types';
+import { authApi, staffApi } from '../api';
+
+interface User {
+  id: string;
+  username: string;
+  role: 'admin' | 'staff';
+  name: string;
+  tenantId: string;
+}
 
 export function useAuth() {
-  const [user, setUser] = useState<any>(null);
-  const [staffInfo, setStaffInfo] = useState<Staff | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadStaffInfo = async (username: string) => {
-    const res = await db.collection('staff').where({ username }).get();
-    if (res.data && res.data.length > 0) {
-      const data = res.data[0];
-      setStaffInfo({ id: data._id, ...data } as Staff);
-      return data;
-    }
-    return null;
-  };
-
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const loginState = await auth.getLoginState();
-        
-        if (loginState) {
-          setUser(loginState.user);
-          const currentUsername = localStorage.getItem('currentUsername');
-          if (currentUsername) {
-            await signInAnonymously();
-            await loadStaffInfo(currentUsername);
-          }
-        } else {
-          setUser(null);
-          setStaffInfo(null);
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        setUser(null);
-        setStaffInfo(null);
-      }
-      setLoading(false);
-    };
-
-    checkAuth();
-
-    auth.onLoginStateChanged((loginState) => {
-      if (loginState) {
-        setUser(loginState.user);
-      } else {
-        setUser(null);
-        setStaffInfo(null);
-        localStorage.removeItem('currentUsername');
-      }
-    });
+    const saved = localStorage.getItem('user');
+    if (saved) {
+      setUser(JSON.parse(saved));
+    }
+    setLoading(false);
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      console.log('开始登录...');
-      
-      try {
-        await signInAnonymously();
-        console.log('匿名登录成功');
-      } catch (e) {
-        console.log('匿名登录失败，尝试继续:', e);
+      const res = await authApi.login(username, password);
+      if (res.success) {
+        setUser(res.user);
+        localStorage.setItem('user', JSON.stringify(res.user));
+        return true;
       }
-      
-      console.log('查询用户...');
-      const res = await db.collection('staff').where({ username }).get();
-      console.log('查询结果:', res);
-      
-      if (!res.data || res.data.length === 0) {
-        throw new Error('用户名不存在');
-      }
-      
-      const userData = res.data[0];
-      if (userData.password !== password) {
-        throw new Error('密码错误');
-      }
-      
-      localStorage.setItem('currentUsername', username);
-      const staffData = { id: userData._id, ...userData } as Staff;
-      console.log('设置 staffInfo:', staffData);
-      console.log('staffInfo.tenantId:', staffData.tenantId);
-      setStaffInfo(staffData);
-      setUser({ username });
-      
-      console.log('登录成功');
-      return userData;
-    } catch (error: any) {
-      console.error('登录失败:', error);
-      throw error;
+      throw new Error(res.error || '登录失败');
+    } catch (err: any) {
+      console.error('登录错误:', err);
+      throw err;
     }
   };
 
-  const registerAdmin = async (username: string, password: string, name: string) => {
+  const register = async (username: string, password: string): Promise<boolean> => {
     try {
-      console.log('开始注册管理员...');
-      await signInAnonymously();
-      
-      const existing = await db.collection('staff').where({ username }).get();
-      if (existing.data && existing.data.length > 0) {
-        throw new Error('用户名已存在');
+      const res = await authApi.register(username, password);
+      if (res.success) {
+        setUser(res.user);
+        localStorage.setItem('user', JSON.stringify(res.user));
+        return true;
       }
-      
-      const id = crypto.randomUUID();
-      const adminData = {
-        username,
-        password,
-        name,
-        role: 'admin',
-        tenantId: id,
-        joinedDate: new Date().toISOString().split('T')[0]
-      };
-      
-      await db.collection('staff').doc(id).set(adminData);
-      
-      localStorage.setItem('currentUsername', username);
-      setStaffInfo({ id, ...adminData } as Staff);
-      setUser({ username });
-      
-      return adminData;
-    } catch (error: any) {
-      console.error('注册失败:', error);
-      throw error;
+      throw new Error(res.error || '注册失败');
+    } catch (err: any) {
+      console.error('注册错误:', err);
+      throw err;
     }
   };
 
-  const logout = async () => {
-    await auth.signOut();
-    localStorage.removeItem('currentUsername');
+  const registerAdmin = async (username: string, password: string, name: string): Promise<boolean> => {
+    try {
+      const res = await authApi.register(username, password);
+      if (res.success) {
+        // 更新用户名称
+        const userData = { ...res.user, name };
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+        return true;
+      }
+      throw new Error(res.error || '注册失败');
+    } catch (err: any) {
+      console.error('注册错误:', err);
+      throw err;
+    }
+  };
+
+  const logout = () => {
     setUser(null);
-    setStaffInfo(null);
+    localStorage.removeItem('user');
   };
 
-  const createStaffAccount = async (username: string, password: string, name: string) => {
-    if (!staffInfo || staffInfo.role !== 'admin') {
-      throw new Error('只有管理员可以创建员工账号');
-    }
-    
-    const existing = await db.collection('staff').where({ username }).get();
-    if (existing.data && existing.data.length > 0) {
-      throw new Error('用户名已存在');
-    }
-    
-    const id = crypto.randomUUID();
-    await db.collection('staff').doc(id).set({
-      username,
-      password,
-      name,
-      role: 'staff',
-      tenantId: staffInfo.tenantId,
-      joinedDate: new Date().toISOString().split('T')[0]
-    });
-    
-    return id;
-  };
-
-  // 修改密码
-  const changePassword = async (username: string, oldPassword: string, newPassword: string) => {
+  const changePassword = async (username: string, oldPassword: string, newPassword: string): Promise<boolean> => {
     try {
-      await signInAnonymously();
-      
-      const res = await db.collection('staff').where({ username }).get();
-      if (!res.data || res.data.length === 0) {
-        throw new Error('用户名不存在');
+      const res = await authApi.changePassword(username, oldPassword, newPassword);
+      if (res.success) {
+        return true;
       }
-      
-      const userData = res.data[0];
-      if (userData.password !== oldPassword) {
-        throw new Error('原密码错误');
-      }
-      
-      // 更新密码
-      await db.collection('staff').doc(userData._id).update({ password: newPassword });
-      
-      return true;
-    } catch (error: any) {
-      console.error('修改密码失败:', error);
-      throw error;
+      throw new Error(res.error || '修改密码失败');
+    } catch (err: any) {
+      console.error('修改密码错误:', err);
+      throw err;
     }
   };
 
-  const getTenantId = () => {
-    console.log('getTenantId called, staffInfo:', staffInfo);
-    return staffInfo?.tenantId || null;
+  const createStaffAccount = async (username: string, password: string, name: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const res = await staffApi.add({ username, password, name, tenantId: user.tenantId });
+      if (res.success) {
+        return true;
+      }
+      throw new Error(res.error || '创建员工失败');
+    } catch (err: any) {
+      console.error('创建员工错误:', err);
+      throw err;
+    }
   };
 
-  return {
-    user,
+  // 兼容旧代码的属性
+  const isAdmin = user?.role === 'admin';
+  const staffInfo = user ? {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    tenantId: user.tenantId,
+    role: user.role
+  } : null;
+
+  const getTenantId = () => user?.tenantId || null;
+
+  return { 
+    user, 
     staffInfo,
-    loading,
-    login,
+    loading, 
+    login, 
+    register,
     registerAdmin,
-    logout,
+    logout, 
+    changePassword, 
     createStaffAccount,
-    changePassword,
-    getTenantId,
-    isAdmin: staffInfo?.role === 'admin',
-    isStaff: staffInfo?.role === 'staff'
+    isAdmin,
+    getTenantId
   };
 }
