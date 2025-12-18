@@ -373,12 +373,12 @@ export const StaffPortal: React.FC<Props> = ({
                   const consumed = snap.startBalance - endBalance;
                   const isSaved = savedWindows[snap.windowId];
                   return (
-                    <div key={snap.windowId} className={`bg-black/30 p-3 rounded border ${isSaved ? 'border-green-500/50' : 'border-cyber-primary/20'}`}>
+                    <div key={snap.windowId} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
                       <div className="flex justify-between items-center mb-2">
                         <div>
                           <span className="font-mono">#{snap.windowNumber}</span>
                           <span className="text-xs text-gray-500 ml-2">{snap.machineName}</span>
-                          {isSaved && <span className="text-xs text-green-400 ml-2">✓ 已保存</span>}
+                          {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
                         </div>
                         <div className="text-xs text-gray-400">开始: {formatWan(snap.startBalance)}</div>
                       </div>
@@ -395,21 +395,16 @@ export const StaffPortal: React.FC<Props> = ({
                         </div>
                         <button
                           onClick={() => {
-                            if (inputValue) {
-                              setSavedWindows({...savedWindows, [snap.windowId]: true});
-                              showSuccess('已保存', `窗口 #${snap.windowNumber} 数据已临时保存`);
-                            }
+                            setWindowBalances({...windowBalances, [snap.windowId]: '0'});
+                            setSavedWindows({...savedWindows, [snap.windowId]: true});
                           }}
-                          disabled={!inputValue}
                           className={`px-3 py-2 text-xs font-mono border ${
-                            isSaved 
-                              ? 'bg-green-500/20 border-green-500 text-green-400' 
-                              : inputValue 
-                                ? 'border-cyber-primary text-cyber-primary hover:bg-cyber-primary/20' 
-                                : 'border-gray-600 text-gray-600 cursor-not-allowed'
+                            inputValue === '0'
+                              ? 'bg-red-500/20 border-red-500 text-red-400' 
+                              : 'border-orange-500 text-orange-400 hover:bg-orange-500/20'
                           }`}
                         >
-                          {isSaved ? '已存' : '保存'}
+                          消耗完
                         </button>
                       </div>
                     </div>
