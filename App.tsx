@@ -177,7 +177,7 @@ const AdminApp: React.FC<{
           <header className="mb-8 flex justify-between items-end border-b border-cyber-primary/30 pb-4">
             <div>
               <h1 className="text-3xl md:text-5xl font-bold uppercase tracking-tighter font-mono text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">
-                三角洲<span className="text-cyber-primary drop-shadow-[0_0_8px_#00f3ff]">员工系统</span>
+                三角洲<span className="text-cyber-primary drop-shadow-[0_0_8px_#00f3ff]">撞车系统</span>
               </h1>
               <p className="text-cyber-primary/60 font-mono text-xs tracking-[0.4em] mt-2 ml-1">
                 ADMIN PANEL // CLOUD_SYNC

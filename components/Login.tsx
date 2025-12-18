@@ -131,7 +131,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
         <div className="text-center mb-8">
           <Hexagon className="text-cyber-primary mx-auto mb-4 animate-pulse-slow drop-shadow-[0_0_8px_#00f3ff]" size={48} />
           <h1 className="text-2xl font-mono text-white tracking-wider">
-            三角洲<span className="text-cyber-primary">员工系统</span>
+            三角洲<span className="text-cyber-primary">撞车系统</span>
           </h1>
           <p className="text-cyber-primary/60 font-mono text-xs mt-2">
             {mode === 'adminRegister' ? 'ADMIN REGISTRATION' : mode === 'changePassword' ? 'CHANGE PASSWORD' : 'SYSTEM LOGIN'}
