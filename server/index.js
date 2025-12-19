@@ -117,7 +117,7 @@ app.delete('/api/staff/:id', async (req, res) => {
 app.get('/api/staff/:tenantId', async (req, res) => {
   try {
     const staff = await User.find({ tenantId: req.params.tenantId, role: 'staff' });
-    res.json({ success: true, data: staff.map(s => ({ id: s._id, username: s.username, name: s.name, tenantId: s.tenantId })) });
+    res.json({ success: true, data: staff.map(s => ({ id: s._id, username: s.username, name: s.name, role: s.role, tenantId: s.tenantId })) });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
