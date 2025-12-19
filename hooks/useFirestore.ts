@@ -199,6 +199,14 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  const updateKookChannel = async (id: string, data: Partial<KookChannel>) => {
+    const channel = kookChannels.find(c => c.id === id);
+    if (channel) {
+      await dataApi.update('kookChannels', id, { ...channel, ...data });
+      await loadData();
+    }
+  };
+
   // 云机
   const addCloudMachine = async (machine: Omit<CloudMachine, 'id'>) => {
     if (!tenantId) return '';
@@ -349,6 +357,7 @@ export function useFirestore(tenantId: string | null) {
     saveSettings,
     addKookChannel,
     deleteKookChannel,
+    updateKookChannel,
     addCloudMachine,
     batchPurchase,
     deleteCloudMachine,

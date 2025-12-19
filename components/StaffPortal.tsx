@@ -133,6 +133,9 @@ export const StaffPortal: React.FC<Props> = ({
   // 空闲窗口（可申请的）
   const freeWindows = useMemo(() => cloudWindows.filter(w => !w.userId), [cloudWindows]);
 
+  // 我的 Kook 频道
+  const myKook = useMemo(() => kookChannels.find(k => k.userId === staff.id), [kookChannels, staff.id]);
+
   const getMachine = (machineId: string) => {
     return cloudMachines.find(m => m.id === machineId);
   };
@@ -492,6 +495,11 @@ export const StaffPortal: React.FC<Props> = ({
             <div className="flex items-center gap-2 text-cyber-primary">
               <Monitor size={20} />
               <h2 className="font-mono text-lg">我的云机窗口</h2>
+              {myKook && (
+                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30">
+                  Kook: {myKook.phone} ({myKook.nickname || '无昵称'})
+                </span>
+              )}
             </div>
             <button
               onClick={() => setShowWindowSelectModal(true)}
