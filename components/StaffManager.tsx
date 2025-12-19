@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X } from 'lucide-react';
+import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight } from 'lucide-react';
 import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, useCyberModal } from './CyberUI';
 import { Staff, OrderRecord, Settings, CloudWindow, CloudMachine } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
@@ -26,7 +26,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
-  const { ModalComponent } = useCyberModal();
+  const [transferWindowId, setTransferWindowId] = useState<string | null>(null);
+  const [transferTargetStaffId, setTransferTargetStaffId] = useState('');
+  const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +80,22 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   // 释放窗口
   const handleReleaseWindow = (windowId: string) => {
     onAssignWindow(windowId, null);
+  };
+
+  // 获取员工窗口数量
+  const getStaffWindowCount = (staffId: string) => cloudWindows.filter(w => w.userId === staffId).length;
+
+  // 处理转让
+  const handleTransfer = () => {
+    if (!transferWindowId || !transferTargetStaffId) return;
+    if (getStaffWindowCount(transferTargetStaffId) >= 10) {
+      showAlert('无法转让', '目标员工窗口已满（最多10个）');
+      return;
+    }
+    onAssignWindow(transferWindowId, transferTargetStaffId);
+    showSuccess('转让成功', '窗口已转让给新员工');
+    setTransferWindowId(null);
+    setTransferTargetStaffId('');
   };
 
   return (
@@ -223,13 +241,22 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                           <div key={window.id} className="p-3 bg-cyber-primary/10 border border-cyber-primary/30 rounded">
                             <div className="flex justify-between items-start mb-2">
                               <span className="font-mono font-bold text-white">#{window.windowNumber}</span>
-                              <button
-                                onClick={() => handleReleaseWindow(window.id)}
-                                className="text-yellow-500 hover:text-yellow-400 p-1"
-                                title="释放窗口"
-                              >
-                                <X size={14} />
-                              </button>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => setTransferWindowId(window.id)}
+                                  className="text-cyber-primary hover:text-cyber-accent p-1"
+                                  title="转让窗口"
+                                >
+                                  <ArrowRight size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleReleaseWindow(window.id)}
+                                  className="text-yellow-500 hover:text-yellow-400 p-1"
+                                  title="释放窗口"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
                             </div>
                             <div className="text-xs text-gray-400 mb-1">{getMachineName(window.machineId)}</div>
                             <div className="text-cyber-accent font-mono">{formatWan(window.goldBalance)}</div>
@@ -311,6 +338,37 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             <div className="flex gap-3">
               <button onClick={() => setDeleteOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
               <button onClick={() => { onDeleteOrder(deleteOrderId); setDeleteOrderId(null); }} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 转让窗口弹窗 */}
+      {transferWindowId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-cyber-panel border border-cyber-primary p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
+            <h3 className="text-xl font-mono text-cyber-primary mb-4">转让窗口</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              窗口 #{cloudWindows.find(w => w.id === transferWindowId)?.windowNumber} 
+              → 选择目标员工
+            </p>
+            <select
+              value={transferTargetStaffId}
+              onChange={e => setTransferTargetStaffId(e.target.value)}
+              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
+            >
+              <option value="">选择目标员工...</option>
+              {staffList.filter(s => s.role === 'staff' && s.id !== selectedStaffId).map(s => (
+                <option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>
+                  {s.name} ({getStaffWindowCount(s.id)}/10)
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setTransferWindowId(null); setTransferTargetStaffId(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+              <button onClick={handleTransfer} disabled={!transferTargetStaffId} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm disabled:opacity-50">确认转让</button>
             </div>
           </div>
         </div>
