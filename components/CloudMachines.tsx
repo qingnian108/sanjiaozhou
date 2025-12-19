@@ -542,9 +542,9 @@ export const CloudMachines: React.FC<Props> = ({
                                   </div>
                                 ) : (
                                   <select className="w-full bg-black/40 border border-cyber-primary/30 text-sm p-2 rounded" value=""
-                                    onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 4) { showAlert('无法分配', '该员工已使用4个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
+                                    onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 10) { showAlert('无法分配', '该员工已使用10个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
                                     <option value="">分配给...</option>
-                                    {staffList.map(s => (<option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 4}>{s.name} ({getStaffWindowCount(s.id)}/4)</option>))}
+                                    {staffList.map(s => (<option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>{s.name} ({getStaffWindowCount(s.id)}/10)</option>))}
                                   </select>
                                 )}
                               </div>

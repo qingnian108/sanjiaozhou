@@ -117,8 +117,8 @@ export const Dispatch: React.FC<Props> = ({
   // 分配空闲窗口给当前员工
   const handleAssignFreeWindow = (windowId: string) => {
     const currentCount = getStaffWindows(orderForm.staffId).length;
-    if (currentCount >= 4) {
-      showAlert('无法添加', '该员工已有4个窗口，无法继续添加');
+    if (currentCount >= 10) {
+      showAlert('无法添加', '该员工已有10个窗口，无法继续添加');
       return;
     }
     onAssignWindow(windowId, orderForm.staffId);
