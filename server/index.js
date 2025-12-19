@@ -387,6 +387,162 @@ app.delete('/api/transfer/:id', async (req, res) => {
   }
 });
 
+// ========== 云机转让 ==========
+
+// 云机转让模型
+const MachineTransferSchema = new mongoose.Schema({
+  fromTenantId: String,
+  fromTenantName: String,
+  toTenantId: String,
+  toTenantName: String,
+  machineId: String,
+  machineInfo: Object,  // 云机信息快照
+  windowIds: [String],  // 包含的窗口ID列表
+  windowsInfo: [Object], // 窗口信息快照
+  price: Number,        // 转让价格
+  totalGold: Number,    // 总哈夫币
+  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const MachineTransfer = mongoose.model('MachineTransfer', MachineTransferSchema);
+
+// 发起云机转让
+app.post('/api/machine-transfer/request', async (req, res) => {
+  try {
+    const { fromTenantId, fromTenantName, toTenantId, toTenantName, machineId, machineInfo, windowIds, windowsInfo, price, totalGold } = req.body;
+    
+    // 检查是否是好友
+    const isFriend = await Friend.findOne({
+      $or: [
+        { fromId: fromTenantId, toId: toTenantId, status: 'accepted' },
+        { fromId: toTenantId, toId: fromTenantId, status: 'accepted' }
+      ]
+    });
+    if (!isFriend) return res.json({ success: false, error: '只能转让给好友' });
+    
+    const transfer = new MachineTransfer({ 
+      fromTenantId, fromTenantName, toTenantId, toTenantName, 
+      machineId, machineInfo, windowIds, windowsInfo, price, totalGold 
+    });
+    await transfer.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取云机转让请求（收到的）
+app.get('/api/machine-transfer/requests/:tenantId', async (req, res) => {
+  try {
+    const requests = await MachineTransfer.find({ toTenantId: req.params.tenantId, status: 'pending' });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取我发起的云机转让
+app.get('/api/machine-transfer/sent/:tenantId', async (req, res) => {
+  try {
+    const requests = await MachineTransfer.find({ fromTenantId: req.params.tenantId, status: 'pending' });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 处理云机转让请求
+app.post('/api/machine-transfer/respond', async (req, res) => {
+  try {
+    const { transferId, accept } = req.body;
+    const transfer = await MachineTransfer.findById(transferId);
+    if (!transfer) return res.json({ success: false, error: '转让请求不存在' });
+    
+    if (accept) {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // 计算转出方的平均币价
+      const fromPurchases = await Data.find({ 
+        collection: 'purchases', 
+        tenantId: transfer.fromTenantId 
+      });
+      let totalPurchaseAmount = 0;
+      let totalPurchaseCost = 0;
+      fromPurchases.forEach(p => {
+        totalPurchaseAmount += p.data.amount || 0;
+        totalPurchaseCost += p.data.cost || 0;
+      });
+      const avgCostPerGold = totalPurchaseAmount > 0 ? totalPurchaseCost / totalPurchaseAmount : 0;
+      
+      // 计算这批哈夫币的成本
+      const transferCost = transfer.totalGold * avgCostPerGold;
+      // 计算利润 = 转让价格 - 成本
+      const profit = transfer.price - transferCost;
+      
+      // 更新云机的 tenantId
+      await Data.updateOne(
+        { _id: new mongoose.Types.ObjectId(transfer.machineId) },
+        { tenantId: transfer.toTenantId }
+      );
+      
+      // 更新所有窗口的 tenantId，并清除分配的员工
+      for (const windowId of transfer.windowIds) {
+        await Data.updateOne(
+          { _id: new mongoose.Types.ObjectId(windowId) },
+          { 
+            tenantId: transfer.toTenantId,
+            'data.userId': null
+          }
+        );
+      }
+      
+      // 为转出方创建"转让收入"记录（负的采购 = 卖出）
+      const sellRecord = new Data({
+        collection: 'purchases',
+        tenantId: transfer.fromTenantId,
+        data: {
+          date: today,
+          amount: -transfer.totalGold,  // 负数表示卖出
+          cost: -transfer.price,        // 负数表示收入
+          type: 'transfer_out',
+          note: `转让云机给 ${transfer.toTenantName}`
+        }
+      });
+      await sellRecord.save();
+      
+      // 为新老板创建采购记录
+      const purchaseData = new Data({
+        collection: 'purchases',
+        tenantId: transfer.toTenantId,
+        data: {
+          date: today,
+          amount: transfer.totalGold,
+          cost: transfer.price,
+          type: 'transfer_in',
+          note: `从 ${transfer.fromTenantName} 接收云机`
+        }
+      });
+      await purchaseData.save();
+    }
+    
+    transfer.status = accept ? 'accepted' : 'rejected';
+    await transfer.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 取消云机转让请求
+app.delete('/api/machine-transfer/:id', async (req, res) => {
+  try {
+    await MachineTransfer.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 const PORT = 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`服务器运行在 http://0.0.0.0:${PORT}`);

@@ -530,12 +530,6 @@ export const CloudMachines: React.FC<Props> = ({
                                     {formatWan(window.goldBalance)}
                                     {window.goldBalance < 1000000 && <span className="text-sm ml-1">(低)</span>}
                                   </span>
-                                  <button 
-                                    onClick={() => setRechargeWindowId(window.id)} 
-                                    className="text-sm text-cyber-primary hover:text-cyber-accent px-2 py-1 border border-cyber-primary/30 rounded"
-                                  >
-                                    充值
-                                  </button>
                                 </div>
                                 {window.userId ? (
                                   <div className="flex items-center justify-between">
@@ -686,17 +680,35 @@ export const CloudMachines: React.FC<Props> = ({
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-6">
                         <div className="text-sm text-gray-400">{p.date}</div>
-                        <div className="font-mono text-cyber-accent">{formatWan(p.amount)}</div>
-                        <div className="font-mono text-green-400">¥{p.cost.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">
-                          单价: ¥{(p.cost / (p.amount / 10000000)).toFixed(2)}/千万
-                        </div>
+                        {(p as any).type === 'transfer_out' ? (
+                          <>
+                            <div className="font-mono text-orange-400">{formatWan(Math.abs(p.amount))} (转出)</div>
+                            <div className="font-mono text-cyan-400">+¥{Math.abs(p.cost).toFixed(2)}</div>
+                            <div className="text-xs text-gray-500">{(p as any).note}</div>
+                          </>
+                        ) : (p as any).type === 'transfer_in' ? (
+                          <>
+                            <div className="font-mono text-green-400">{formatWan(p.amount)} (转入)</div>
+                            <div className="font-mono text-red-400">-¥{p.cost.toFixed(2)}</div>
+                            <div className="text-xs text-gray-500">{(p as any).note}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-mono text-cyber-accent">{formatWan(p.amount)}</div>
+                            <div className="font-mono text-green-400">¥{p.cost.toFixed(2)}</div>
+                            <div className="text-xs text-gray-500">
+                              单价: ¥{p.amount > 0 ? (p.cost / (p.amount / 10000000)).toFixed(2) : '0'}/千万
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingPurchase(p.id); setEditForm({ date: p.date, amount: String(p.amount), cost: String(p.cost) }); }}
-                          className="p-1 text-cyber-primary hover:text-cyber-accent">
-                          <Edit2 size={16} />
-                        </button>
+                        {!(p as any).type && (
+                          <button onClick={() => { setEditingPurchase(p.id); setEditForm({ date: p.date, amount: String(p.amount), cost: String(p.cost) }); }}
+                            className="p-1 text-cyber-primary hover:text-cyber-accent">
+                            <Edit2 size={16} />
+                          </button>
+                        )}
                         <button onClick={() => onDeletePurchase(p.id)} className="p-1 text-red-500 hover:text-red-400">
                           <Trash2 size={16} />
                         </button>

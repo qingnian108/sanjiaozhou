@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Search, Check, X, Send, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { Users, UserPlus, Search, Check, X, Send, ArrowRightLeft, Trash2, Server } from 'lucide-react';
 import { GlassCard, CyberButton, CyberInput, useCyberModal } from './CyberUI';
-import { friendApi, transferApi } from '../api';
+import { friendApi, transferApi, machineTransferApi } from '../api';
 import { CloudWindow, CloudMachine } from '../types';
+import { formatWan } from '../utils';
 
 interface Friend {
   id: string;
@@ -28,6 +29,20 @@ interface TransferRequest {
   windowInfo: any;
 }
 
+interface MachineTransferRequest {
+  _id: string;
+  fromTenantId: string;
+  fromTenantName: string;
+  toTenantId: string;
+  toTenantName: string;
+  machineId: string;
+  machineInfo: any;
+  windowIds: string[];
+  windowsInfo: any[];
+  price: number;
+  totalGold: number;
+}
+
 interface Props {
   tenantId: string;
   tenantName: string;
@@ -41,24 +56,33 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
   const [sentTransfers, setSentTransfers] = useState<TransferRequest[]>([]);
+  const [machineTransferRequests, setMachineTransferRequests] = useState<MachineTransferRequest[]>([]);
+  const [sentMachineTransfers, setSentMachineTransfers] = useState<MachineTransferRequest[]>([]);
   const [searchUsername, setSearchUsername] = useState('');
   const [searchResult, setSearchResult] = useState<any>(null);
   const [searchError, setSearchError] = useState('');
   const [showTransferModal, setShowTransferModal] = useState<Friend | null>(null);
   const [selectedWindowId, setSelectedWindowId] = useState('');
+  const [showMachineTransferModal, setShowMachineTransferModal] = useState<Friend | null>(null);
+  const [selectedMachineId, setSelectedMachineId] = useState('');
+  const [transferPrice, setTransferPrice] = useState('');
   const { showSuccess, showAlert, ModalComponent } = useCyberModal();
 
   const loadData = async () => {
-    const [friendsRes, requestsRes, transferRes, sentRes] = await Promise.all([
+    const [friendsRes, requestsRes, transferRes, sentRes, machineTransferRes, sentMachineRes] = await Promise.all([
       friendApi.list(tenantId),
       friendApi.getRequests(tenantId),
       transferApi.getRequests(tenantId),
-      transferApi.getSent(tenantId)
+      transferApi.getSent(tenantId),
+      machineTransferApi.getRequests(tenantId),
+      machineTransferApi.getSent(tenantId)
     ]);
     if (friendsRes.success) setFriends(friendsRes.data);
     if (requestsRes.success) setRequests(requestsRes.data);
     if (transferRes.success) setTransferRequests(transferRes.data);
     if (sentRes.success) setSentTransfers(sentRes.data);
+    if (machineTransferRes.success) setMachineTransferRequests(machineTransferRes.data);
+    if (sentMachineRes.success) setSentMachineTransfers(sentMachineRes.data);
   };
 
   useEffect(() => {
@@ -154,8 +178,65 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
     showSuccess('已取消', '转让请求已取消');
   };
 
+  // 云机转让
+  const handleMachineTransfer = async () => {
+    if (!showMachineTransferModal || !selectedMachineId) return;
+    const machine = cloudMachines.find(m => m.id === selectedMachineId);
+    const machineWindows = cloudWindows.filter(w => w.machineId === selectedMachineId);
+    const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+    
+    // 检查是否有窗口分配给员工
+    const assignedWindows = machineWindows.filter(w => w.userId);
+    if (assignedWindows.length > 0) {
+      showAlert('无法转让', '该云机有窗口已分配给员工，请先释放所有窗口');
+      return;
+    }
+    
+    const res = await machineTransferApi.request({
+      fromTenantId: tenantId,
+      fromTenantName: tenantName,
+      toTenantId: showMachineTransferModal.tenantId,
+      toTenantName: showMachineTransferModal.name,
+      machineId: selectedMachineId,
+      machineInfo: { phone: machine?.phone, platform: machine?.platform },
+      windowIds: machineWindows.map(w => w.id),
+      windowsInfo: machineWindows.map(w => ({ windowNumber: w.windowNumber, goldBalance: w.goldBalance })),
+      price: parseFloat(transferPrice) || 0,
+      totalGold
+    });
+    
+    if (res.success) {
+      showSuccess('发送成功', '云机转让请求已发送');
+      setShowMachineTransferModal(null);
+      setSelectedMachineId('');
+      setTransferPrice('');
+      loadData();
+    } else {
+      showAlert('发送失败', res.error);
+    }
+  };
+
+  const handleRespondMachineTransfer = async (transferId: string, accept: boolean) => {
+    await machineTransferApi.respond(transferId, accept);
+    loadData();
+    onRefresh();
+    showSuccess(accept ? '已接收云机' : '已拒绝', '');
+  };
+
+  const handleCancelMachineTransfer = async (id: string) => {
+    await machineTransferApi.cancel(id);
+    loadData();
+    showSuccess('已取消', '云机转让请求已取消');
+  };
+
   // 可转让的窗口（未分配给员工的）
   const transferableWindows = cloudWindows.filter(w => !w.userId);
+  
+  // 可转让的云机（所有窗口都未分配给员工的）
+  const transferableMachines = cloudMachines.filter(m => {
+    const machineWindows = cloudWindows.filter(w => w.machineId === m.id);
+    return machineWindows.every(w => !w.userId);
+  });
 
   return (
     <div className="space-y-6">
@@ -250,12 +331,12 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
         </GlassCard>
       )}
 
-      {/* 我发起的转让 */}
+      {/* 我发起的窗口转让 */}
       {sentTransfers.length > 0 && (
         <GlassCard>
           <div className="flex items-center gap-2 mb-4 text-gray-400">
             <ArrowRightLeft size={20} />
-            <h2 className="font-mono text-lg">等待对方接收 ({sentTransfers.length})</h2>
+            <h2 className="font-mono text-lg">等待对方接收窗口 ({sentTransfers.length})</h2>
           </div>
           <div className="space-y-2">
             {sentTransfers.map(req => (
@@ -265,6 +346,69 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
                   <div className="text-sm text-gray-400">窗口 #{req.windowInfo?.windowNumber}</div>
                 </div>
                 <button onClick={() => handleCancelTransfer(req._id)} className="p-2 text-gray-400 hover:text-red-400">
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* 云机转让请求（收到的） */}
+      {machineTransferRequests.length > 0 && (
+        <GlassCard>
+          <div className="flex items-center gap-2 mb-4 text-green-400">
+            <Server size={20} />
+            <h2 className="font-mono text-lg">收到的云机转让 ({machineTransferRequests.length})</h2>
+          </div>
+          <div className="space-y-2">
+            {machineTransferRequests.map(req => (
+              <div key={req._id} className="p-3 bg-green-500/10 border border-green-500/30 rounded">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-mono">{req.fromTenantName} 转让云机给你</div>
+                    <div className="text-sm text-gray-400">
+                      云机: {req.machineInfo?.phone} ({req.machineInfo?.platform})
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      包含 {req.windowsInfo?.length || 0} 个窗口 | 总余额: {formatWan(req.totalGold)}
+                    </div>
+                    <div className="text-sm text-cyber-accent">
+                      转让价格: ¥{req.price?.toFixed(2) || '0.00'}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleRespondMachineTransfer(req._id, true)} className="p-2 bg-green-500/20 border border-green-500 text-green-400 hover:bg-green-500/30">
+                      <Check size={16} />
+                    </button>
+                    <button onClick={() => handleRespondMachineTransfer(req._id, false)} className="p-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/30">
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* 我发起的云机转让 */}
+      {sentMachineTransfers.length > 0 && (
+        <GlassCard>
+          <div className="flex items-center gap-2 mb-4 text-gray-400">
+            <Server size={20} />
+            <h2 className="font-mono text-lg">等待对方接收云机 ({sentMachineTransfers.length})</h2>
+          </div>
+          <div className="space-y-2">
+            {sentMachineTransfers.map(req => (
+              <div key={req._id} className="p-3 bg-black/30 border border-gray-600 rounded flex justify-between items-center">
+                <div>
+                  <div className="font-mono">转让给 {req.toTenantName}</div>
+                  <div className="text-sm text-gray-400">
+                    云机: {req.machineInfo?.phone} | {req.windowsInfo?.length || 0} 个窗口 | ¥{req.price?.toFixed(2)}
+                  </div>
+                </div>
+                <button onClick={() => handleCancelMachineTransfer(req._id)} className="p-2 text-gray-400 hover:text-red-400">
                   <X size={16} />
                 </button>
               </div>
@@ -287,6 +431,9 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
               <div key={friend.id} className="p-3 bg-black/30 rounded border border-cyber-primary/20 flex justify-between items-center">
                 <div className="font-mono">{friend.name}</div>
                 <div className="flex gap-2">
+                  <CyberButton onClick={() => setShowMachineTransferModal(friend)} className="text-sm py-1">
+                    <Server size={14} className="mr-1" /> 转让云机
+                  </CyberButton>
                   <CyberButton onClick={() => setShowTransferModal(friend)} className="text-sm py-1">
                     <ArrowRightLeft size={14} className="mr-1" /> 转让窗口
                   </CyberButton>
@@ -331,6 +478,77 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
                 取消
               </button>
               <CyberButton onClick={handleTransfer} disabled={!selectedWindowId} className="flex-1">
+                确认转让
+              </CyberButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 云机转让弹窗 */}
+      {showMachineTransferModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-green-500/30 p-6 max-w-md w-full">
+            <h3 className="text-xl font-mono text-green-400 mb-4 flex items-center gap-2">
+              <Server size={20} /> 转让云机给 {showMachineTransferModal.name}
+            </h3>
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-2 block">选择要转让的云机</label>
+              <select
+                value={selectedMachineId}
+                onChange={e => setSelectedMachineId(e.target.value)}
+                className="w-full bg-black/40 border border-green-500/30 text-cyber-text font-mono px-3 py-2"
+              >
+                <option value="">请选择云机</option>
+                {transferableMachines.map(m => {
+                  const machineWindows = cloudWindows.filter(w => w.machineId === m.id);
+                  const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {m.phone} ({m.platform}) - {machineWindows.length}个窗口 - {formatWan(totalGold)}
+                    </option>
+                  );
+                })}
+              </select>
+              {transferableMachines.length === 0 && (
+                <p className="text-yellow-400 text-sm mt-2">没有可转让的云机（有窗口分配给员工的云机不能转让）</p>
+              )}
+            </div>
+            {selectedMachineId && (
+              <div className="mb-4 p-3 bg-black/30 rounded border border-green-500/20">
+                <div className="text-sm text-gray-400 mb-2">云机详情:</div>
+                {(() => {
+                  const machine = cloudMachines.find(m => m.id === selectedMachineId);
+                  const machineWindows = cloudWindows.filter(w => w.machineId === selectedMachineId);
+                  const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                  return (
+                    <div className="text-sm">
+                      <div>手机号: {machine?.phone}</div>
+                      <div>平台: {machine?.platform}</div>
+                      <div>窗口数: {machineWindows.length}</div>
+                      <div className="text-cyber-accent">总余额: {formatWan(totalGold)}</div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-2 block">转让价格（元）</label>
+              <input
+                type="number"
+                step="0.01"
+                value={transferPrice}
+                onChange={e => setTransferPrice(e.target.value)}
+                placeholder="输入转让价格"
+                className="w-full bg-black/40 border border-green-500/30 text-cyber-text font-mono px-3 py-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">对方接收后会自动创建采购记录</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowMachineTransferModal(null); setSelectedMachineId(''); setTransferPrice(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <CyberButton onClick={handleMachineTransfer} disabled={!selectedMachineId} className="flex-1">
                 确认转让
               </CyberButton>
             </div>

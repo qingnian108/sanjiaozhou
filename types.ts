@@ -3,6 +3,8 @@ export interface PurchaseRecord {
   date: string;
   amount: number; // in 'wan' (10k)
   cost: number; // total CNY
+  type?: 'transfer_out' | 'transfer_in'; // 转让类型
+  note?: string; // 备注
 }
 
 export interface Staff {

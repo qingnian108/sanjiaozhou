@@ -64,3 +64,13 @@ export const transferApi = {
     request('/transfer/respond', { method: 'POST', body: JSON.stringify({ transferId, accept }) }),
   cancel: (id: string) => request(`/transfer/${id}`, { method: 'DELETE' })
 };
+
+// 云机转让相关
+export const machineTransferApi = {
+  request: (data: any) => request('/machine-transfer/request', { method: 'POST', body: JSON.stringify(data) }),
+  getRequests: (tenantId: string) => request(`/machine-transfer/requests/${tenantId}`),
+  getSent: (tenantId: string) => request(`/machine-transfer/sent/${tenantId}`),
+  respond: (transferId: string, accept: boolean) =>
+    request('/machine-transfer/respond', { method: 'POST', body: JSON.stringify({ transferId, accept }) }),
+  cancel: (id: string) => request(`/machine-transfer/${id}`, { method: 'DELETE' })
+};
