@@ -27,7 +27,7 @@ interface Props {
   onDeletePurchase: (id: string) => void;
   onUpdatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   onProcessRequest: (requestId: string, approved: boolean, adminId: string) => void;
-  onRechargeWindow: (windowId: string, amount: number, operatorId: string) => void;
+  onRechargeWindow: (windowId: string, amount: number, operatorId: string, cost?: number) => void;
 }
 
 export const CloudMachines: React.FC<Props> = ({
@@ -53,6 +53,7 @@ export const CloudMachines: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests' | 'records'>('purchase');
   const [rechargeWindowId, setRechargeWindowId] = useState<string | null>(null);
   const [rechargeAmount, setRechargeAmount] = useState('');
+  const [rechargeCost, setRechargeCost] = useState('');
   const [editingPurchase, setEditingPurchase] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ date: '', amount: '', cost: '' });
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
@@ -64,9 +65,19 @@ export const CloudMachines: React.FC<Props> = ({
   const handleRecharge = () => {
     if (!rechargeWindowId || !rechargeAmount) return;
     const amount = parseFloat(rechargeAmount) * 10000; // 转换为实际金币
-    onRechargeWindow(rechargeWindowId, amount, adminId);
+    const cost = rechargeCost ? parseFloat(rechargeCost) : 0;
+    onRechargeWindow(rechargeWindowId, amount, adminId, cost);
+    // 如果有成本，同时添加采购记录
+    if (cost > 0) {
+      onAddPurchase({
+        date: new Date().toISOString().split('T')[0],
+        amount: amount,
+        cost: cost
+      });
+    }
     setRechargeWindowId(null);
     setRechargeAmount('');
+    setRechargeCost('');
   };
 
   // 处理审批申请
@@ -710,8 +721,16 @@ export const CloudMachines: React.FC<Props> = ({
               onChange={e => setRechargeAmount(e.target.value)}
               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
             />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="购买价格（元）"
+              value={rechargeCost}
+              onChange={e => setRechargeCost(e.target.value)}
+              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
+            />
             <div className="flex gap-3">
-              <button onClick={() => { setRechargeWindowId(null); setRechargeAmount(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">
+              <button onClick={() => { setRechargeWindowId(null); setRechargeAmount(''); setRechargeCost(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">
                 取消
               </button>
               <button onClick={handleRecharge} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm">

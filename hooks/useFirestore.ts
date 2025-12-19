@@ -314,7 +314,7 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  const rechargeWindow = async (windowId: string, amount: number, operatorId: string) => {
+  const rechargeWindow = async (windowId: string, amount: number, operatorId: string, cost?: number) => {
     if (!tenantId) return;
     const window = cloudWindows.find(w => w.id === windowId);
     if (!window) return;
