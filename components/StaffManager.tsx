@@ -1,19 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, Trash2, Search, Crosshair } from 'lucide-react';
+import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X } from 'lucide-react';
 import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, useCyberModal } from './CyberUI';
-import { Staff, OrderRecord, Settings } from '../types';
+import { Staff, OrderRecord, Settings, CloudWindow, CloudMachine } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
 
 interface StaffManagerProps {
   staffList: Staff[];
   orders: OrderRecord[];
   settings: Settings;
+  cloudWindows: CloudWindow[];
+  cloudMachines: CloudMachine[];
   onAddStaff: (email: string, password: string, name: string) => Promise<void>;
   onDeleteStaff: (id: string) => void;
   onDeleteOrder: (id: string) => void;
+  onAssignWindow: (windowId: string, userId: string | null) => void;
 }
 
-export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, onAddStaff, onDeleteStaff, onDeleteOrder }) => {
+export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, cloudWindows, cloudMachines, onAddStaff, onDeleteStaff, onDeleteOrder, onAssignWindow }) => {
   console.log('StaffManager received staffList:', staffList);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffUsername, setNewStaffUsername] = useState('');
@@ -62,6 +65,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
         records: orders.filter(o => o.staffId === selectedStaffId).sort((a,b) => b.date.localeCompare(a.date))
       }
     : null;
+
+  // 获取员工的窗口
+  const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
+  
+  // 获取云机名称
+  const getMachineName = (machineId: string) => {
+    const machine = cloudMachines.find(m => m.id === machineId);
+    return machine ? `${machine.phone} (${machine.platform})` : '未知';
+  };
+
+  // 释放窗口
+  const handleReleaseWindow = (windowId: string) => {
+    onAssignWindow(windowId, null);
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -186,6 +203,45 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                   trend="down"
                 />
               </div>
+
+              {/* 员工窗口 */}
+              <GlassCard>
+                <h3 className="text-cyber-primary font-mono text-sm mb-4 flex items-center gap-2 border-b border-gray-800 pb-2 font-bold uppercase tracking-wider">
+                  <Monitor size={16} className="text-cyber-primary" /> {selectedStaffDetail.stats.staff.name} // 使用中的窗口
+                </h3>
+                {(() => {
+                  const staffWindows = getStaffWindows(selectedStaffId!);
+                  const totalGold = staffWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                  return staffWindows.length > 0 ? (
+                    <div>
+                      <div className="mb-3 text-sm text-gray-400">
+                        共 <span className="text-cyber-accent font-bold">{staffWindows.length}</span> 个窗口，
+                        总余额 <span className="text-cyber-accent font-bold">{formatWan(totalGold)}</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {staffWindows.map(window => (
+                          <div key={window.id} className="p-3 bg-cyber-primary/10 border border-cyber-primary/30 rounded">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="font-mono font-bold text-white">#{window.windowNumber}</span>
+                              <button
+                                onClick={() => handleReleaseWindow(window.id)}
+                                className="text-yellow-500 hover:text-yellow-400 p-1"
+                                title="释放窗口"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                            <div className="text-xs text-gray-400 mb-1">{getMachineName(window.machineId)}</div>
+                            <div className="text-cyber-accent font-mono">{formatWan(window.goldBalance)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 text-center py-4">该员工暂无分配的窗口</div>
+                  );
+                })()}
+              </GlassCard>
 
               <GlassCard>
                 <h3 className="text-cyber-secondary font-mono text-sm mb-4 flex items-center gap-2 border-b border-gray-800 pb-2 font-bold uppercase tracking-wider">
