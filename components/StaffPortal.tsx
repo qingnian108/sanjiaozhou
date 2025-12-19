@@ -395,6 +395,20 @@ export const StaffPortal: React.FC<Props> = ({
                         </div>
                         <button
                           onClick={() => {
+                            const startBalanceWan = String(snap.startBalance / 10000);
+                            setWindowBalances({...windowBalances, [snap.windowId]: startBalanceWan});
+                            setSavedWindows({...savedWindows, [snap.windowId]: true});
+                          }}
+                          className={`px-3 py-2 text-xs font-mono border ${
+                            inputValue === String(snap.startBalance / 10000)
+                              ? 'bg-green-500/20 border-green-500 text-green-400' 
+                              : 'border-green-500 text-green-400 hover:bg-green-500/20'
+                          }`}
+                        >
+                          未使用
+                        </button>
+                        <button
+                          onClick={() => {
                             setWindowBalances({...windowBalances, [snap.windowId]: '0'});
                             setSavedWindows({...savedWindows, [snap.windowId]: true});
                           }}

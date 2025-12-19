@@ -119,7 +119,12 @@ export function useFirestore(tenantId: string | null) {
     for (const result of windowResults) {
       const window = cloudWindows.find(w => w.id === result.windowId);
       if (window) {
-        await dataApi.update('cloudWindows', result.windowId, { ...window, goldBalance: result.endBalance });
+        if (result.endBalance <= 0) {
+          // 余额为0，删除窗口
+          await dataApi.delete('cloudWindows', result.windowId);
+        } else {
+          await dataApi.update('cloudWindows', result.windowId, { ...window, goldBalance: result.endBalance });
+        }
       }
     }
     await loadData();
