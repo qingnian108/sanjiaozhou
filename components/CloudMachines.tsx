@@ -56,6 +56,8 @@ export const CloudMachines: React.FC<Props> = ({
   const [rechargeCost, setRechargeCost] = useState('');
   const [editingPurchase, setEditingPurchase] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ date: '', amount: '', cost: '' });
+  const [transferWindowId, setTransferWindowId] = useState<string | null>(null);
+  const [transferTargetStaffId, setTransferTargetStaffId] = useState('');
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   // 待审批的申请
@@ -538,7 +540,10 @@ export const CloudMachines: React.FC<Props> = ({
                                 {window.userId ? (
                                   <div className="flex items-center justify-between">
                                     <span className={`text-base font-bold ${getStaffColor(window.userId)}`}>{getStaffName(window.userId)}</span>
-                                    <button onClick={() => onAssignWindow(window.id, null)} className="text-sm text-gray-400 hover:text-white px-3 py-1 border border-gray-600 rounded">释放</button>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => setTransferWindowId(window.id)} className="text-sm text-cyber-primary hover:text-cyber-accent px-3 py-1 border border-cyber-primary/30 rounded">转让</button>
+                                      <button onClick={() => onAssignWindow(window.id, null)} className="text-sm text-gray-400 hover:text-white px-3 py-1 border border-gray-600 rounded">释放</button>
+                                    </div>
                                   </div>
                                 ) : (
                                   <select className="w-full bg-black/40 border border-cyber-primary/30 text-sm p-2 rounded" value=""
@@ -735,6 +740,56 @@ export const CloudMachines: React.FC<Props> = ({
               </button>
               <button onClick={handleRecharge} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm">
                 确认充值
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 转让弹窗 */}
+      {transferWindowId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-cyber-primary p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
+            <h3 className="text-xl font-mono text-cyber-primary mb-4 flex items-center gap-2">
+              转让窗口
+            </h3>
+            <p className="text-sm text-gray-400 mb-4">
+              当前窗口: #{windows.find(w => w.id === transferWindowId)?.windowNumber} - 
+              {getStaffName(windows.find(w => w.id === transferWindowId)?.userId || null)}
+            </p>
+            <select
+              value={transferTargetStaffId}
+              onChange={e => setTransferTargetStaffId(e.target.value)}
+              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
+            >
+              <option value="">选择目标员工...</option>
+              {staffList.filter(s => s.id !== windows.find(w => w.id === transferWindowId)?.userId).map(s => (
+                <option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>
+                  {s.name} ({getStaffWindowCount(s.id)}/10)
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setTransferWindowId(null); setTransferTargetStaffId(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">
+                取消
+              </button>
+              <button 
+                onClick={() => {
+                  if (transferTargetStaffId && getStaffWindowCount(transferTargetStaffId) < 10) {
+                    onAssignWindow(transferWindowId, transferTargetStaffId);
+                    showSuccess('转让成功', '窗口已转让给新员工');
+                    setTransferWindowId(null);
+                    setTransferTargetStaffId('');
+                  } else {
+                    showAlert('无法转让', '目标员工窗口已满');
+                  }
+                }}
+                disabled={!transferTargetStaffId}
+                className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm disabled:opacity-50"
+              >
+                确认转让
               </button>
             </div>
           </div>
