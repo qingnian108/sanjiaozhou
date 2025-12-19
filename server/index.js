@@ -479,21 +479,37 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       // 计算利润 = 转让价格 - 成本
       const profit = transfer.price - transferCost;
       
-      // 更新云机的 tenantId
-      await Data.updateOne(
-        { _id: new mongoose.Types.ObjectId(transfer.machineId) },
-        { tenantId: transfer.toTenantId }
+      // 更新云机的 tenantId（尝试两种方式匹配）
+      const machineUpdate = await Data.updateOne(
+        { 
+          collection: 'cloudMachines',
+          $or: [
+            { _id: new mongoose.Types.ObjectId(transfer.machineId) },
+            { 'data.id': transfer.machineId }
+          ]
+        },
+        { $set: { tenantId: transfer.toTenantId } }
       );
+      console.log('Machine update result:', machineUpdate);
       
       // 更新所有窗口的 tenantId，并清除分配的员工
       for (const windowId of transfer.windowIds) {
-        await Data.updateOne(
-          { _id: new mongoose.Types.ObjectId(windowId) },
+        const windowUpdate = await Data.updateOne(
           { 
-            tenantId: transfer.toTenantId,
-            'data.userId': null
+            collection: 'cloudWindows',
+            $or: [
+              { _id: new mongoose.Types.ObjectId(windowId) },
+              { 'data.id': windowId }
+            ]
+          },
+          { 
+            $set: {
+              tenantId: transfer.toTenantId,
+              'data.userId': null
+            }
           }
         );
+        console.log('Window update result:', windowId, windowUpdate);
       }
       
       // 为转出方创建"转让收入"记录（负的采购 = 卖出）
