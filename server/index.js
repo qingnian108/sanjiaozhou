@@ -479,37 +479,47 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       // 计算利润 = 转让价格 - 成本
       const profit = transfer.price - transferCost;
       
-      // 更新云机的 tenantId（尝试两种方式匹配）
-      const machineUpdate = await Data.updateOne(
-        { 
-          collection: 'cloudMachines',
-          $or: [
-            { _id: new mongoose.Types.ObjectId(transfer.machineId) },
-            { 'data.id': transfer.machineId }
-          ]
-        },
-        { $set: { tenantId: transfer.toTenantId } }
-      );
-      console.log('Machine update result:', machineUpdate);
-      
       // 更新所有窗口的 tenantId，并清除分配的员工
+      // 同时需要把窗口对应的云机也转移过去
+      const machineIdsToTransfer = new Set();
+      
       for (const windowId of transfer.windowIds) {
-        const windowUpdate = await Data.updateOne(
-          { 
-            collection: 'cloudWindows',
-            $or: [
-              { _id: new mongoose.Types.ObjectId(windowId) },
-              { 'data.id': windowId }
-            ]
-          },
-          { 
-            $set: {
-              tenantId: transfer.toTenantId,
-              'data.userId': null
-            }
+        // 先找到窗口
+        let windowDoc = await Data.findById(windowId);
+        if (!windowDoc) {
+          windowDoc = await Data.findOne({ collection: 'cloudWindows', 'data.id': windowId });
+        }
+        
+        if (windowDoc) {
+          // 记录需要转移的云机ID
+          if (windowDoc.data && windowDoc.data.machineId) {
+            machineIdsToTransfer.add(windowDoc.data.machineId);
           }
-        );
-        console.log('Window update result:', windowId, windowUpdate);
+          
+          // 更新窗口
+          windowDoc.tenantId = transfer.toTenantId;
+          if (windowDoc.data) {
+            windowDoc.data.userId = null;
+          }
+          await windowDoc.save();
+          console.log('Window updated:', windowId);
+        } else {
+          console.log('Window not found:', windowId);
+        }
+      }
+      
+      // 转移相关的云机
+      for (const machineId of machineIdsToTransfer) {
+        let machineDoc = await Data.findById(machineId);
+        if (!machineDoc) {
+          machineDoc = await Data.findOne({ collection: 'cloudMachines', 'data.id': machineId });
+        }
+        
+        if (machineDoc) {
+          machineDoc.tenantId = transfer.toTenantId;
+          await machineDoc.save();
+          console.log('Machine transferred:', machineId);
+        }
       }
       
       // 为转出方创建"转让收入"记录（负的采购 = 卖出）

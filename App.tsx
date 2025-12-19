@@ -201,7 +201,7 @@ const AdminApp: React.FC<{
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
-            <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onRefresh={refreshData} />} />
+            <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} purchases={purchases} onRefresh={refreshData} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
           </Routes>
         </main>
