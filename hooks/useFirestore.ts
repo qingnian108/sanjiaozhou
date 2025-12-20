@@ -337,7 +337,7 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  // 释放订单中的窗口（中途释放）
+  // 释放订单中的窗口（中途释放）- 使用当前窗口信息
   const releaseOrderWindow = async (
     orderId: string,
     windowId: string,
@@ -346,45 +346,43 @@ export function useFirestore(tenantId: string | null) {
     staffName: string
   ) => {
     const order = orders.find(o => o.id === orderId);
-    if (!order || !order.windowSnapshots) return;
+    if (!order) return;
 
-    const snapshot = order.windowSnapshots.find(s => s.windowId === windowId);
-    if (!snapshot) return;
+    // 获取当前窗口信息
+    const window = cloudWindows.find(w => w.id === windowId);
+    if (!window) return;
 
-    const consumed = snapshot.startBalance - endBalance;
+    const machine = cloudMachines.find(m => m.id === window.machineId);
+    const machineName = machine ? `${machine.phone} (${machine.platform})` : '未知';
+    const consumed = window.goldBalance - endBalance;
 
     // 创建中途释放记录
     const partialResult: PartialWindowResult = {
       windowId,
-      windowNumber: snapshot.windowNumber,
-      machineName: snapshot.machineName,
+      windowNumber: window.windowNumber,
+      machineName,
       staffId,
       staffName,
-      startBalance: snapshot.startBalance,
+      startBalance: window.goldBalance,
       endBalance,
       consumed,
       releasedAt: new Date().toISOString()
     };
 
-    // 更新订单：添加到 partialResults，从 windowSnapshots 移除
+    // 更新订单：添加到 partialResults
     const newPartialResults = [...(order.partialResults || []), partialResult];
-    const newWindowSnapshots = order.windowSnapshots.filter(s => s.windowId !== windowId);
 
     await dataApi.update('orders', orderId, {
       ...order,
-      partialResults: newPartialResults,
-      windowSnapshots: newWindowSnapshots
+      partialResults: newPartialResults
     });
 
     // 更新窗口余额并释放
-    const window = cloudWindows.find(w => w.id === windowId);
-    if (window) {
-      await dataApi.update('cloudWindows', windowId, {
-        ...window,
-        goldBalance: endBalance,
-        userId: null
-      });
-    }
+    await dataApi.update('cloudWindows', windowId, {
+      ...window,
+      goldBalance: endBalance,
+      userId: null
+    });
 
     await loadData();
   };

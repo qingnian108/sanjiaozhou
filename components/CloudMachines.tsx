@@ -50,7 +50,7 @@ export const CloudMachines: React.FC<Props> = ({
   onProcessRequest,
   onRechargeWindow
 }) => {
-  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests' | 'records'>('purchase');
+  const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests' | 'records'>('machines');
   const [rechargeWindowId, setRechargeWindowId] = useState<string | null>(null);
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [rechargeCost, setRechargeCost] = useState('');
@@ -77,6 +77,7 @@ export const CloudMachines: React.FC<Props> = ({
         cost: cost
       });
     }
+    showSuccess('充值成功', `已充值 ${rechargeAmount} 万哈夫币${cost > 0 ? `，采购成本 ${cost} 元` : ''}`);
     setRechargeWindowId(null);
     setRechargeAmount('');
     setRechargeCost('');
@@ -279,15 +280,15 @@ export const CloudMachines: React.FC<Props> = ({
     <div className="space-y-6">
       {/* Tab 切换 */}
       <div className="flex gap-4">
-        <button onClick={() => setActiveTab('purchase')}
-          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
-            ${activeTab === 'purchase' ? 'bg-cyber-accent/10 border-cyber-accent text-cyber-accent' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
-          <ShoppingCart size={20} /> 云机采购
-        </button>
         <button onClick={() => setActiveTab('machines')}
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
             ${activeTab === 'machines' ? 'bg-cyber-primary/10 border-cyber-primary text-cyber-primary' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
           <Monitor size={20} /> 云机管理
+        </button>
+        <button onClick={() => setActiveTab('purchase')}
+          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
+            ${activeTab === 'purchase' ? 'bg-cyber-accent/10 border-cyber-accent text-cyber-accent' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
+          <ShoppingCart size={20} /> 云机采购
         </button>
         <button onClick={() => setActiveTab('requests')}
           className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3 relative
@@ -524,12 +525,20 @@ export const CloudMachines: React.FC<Props> = ({
                                   </div>
                                   <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={16} /></button>
                                 </div>
-                                <div className="flex items-center gap-2 mb-3">
-                                  <span className="text-sm text-gray-400">哈夫币:</span>
-                                  <span className={`font-mono text-lg ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
-                                    {formatWan(window.goldBalance)}
-                                    {window.goldBalance < 1000000 && <span className="text-sm ml-1">(低)</span>}
-                                  </span>
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-400">哈夫币:</span>
+                                    <span className={`font-mono text-lg ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
+                                      {formatWan(window.goldBalance)}
+                                      {window.goldBalance < 1000000 && <span className="text-sm ml-1">(低)</span>}
+                                    </span>
+                                  </div>
+                                  <button 
+                                    onClick={() => setRechargeWindowId(window.id)}
+                                    className="text-xs text-green-400 hover:text-green-300 px-2 py-1 border border-green-500/30 rounded flex items-center gap-1"
+                                  >
+                                    <Coins size={12} /> 充值
+                                  </button>
                                 </div>
                                 {window.userId ? (
                                   <div className="flex items-center justify-between">
@@ -725,32 +734,54 @@ export const CloudMachines: React.FC<Props> = ({
       {/* 充值弹窗 */}
       {rechargeWindowId && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-cyber-panel border border-cyber-primary p-6 max-w-md w-full relative">
-            <div className="absolute top-0 left-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
-            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
-            <h3 className="text-xl font-mono text-cyber-primary mb-4 flex items-center gap-2">
+          <div className="bg-cyber-panel border border-green-500 p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-green-500 shadow-lg"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-green-500 shadow-lg"></div>
+            <h3 className="text-xl font-mono text-green-400 mb-4 flex items-center gap-2">
               <Coins size={20} /> 窗口充值
             </h3>
-            <input
-              type="number"
-              placeholder="充值金额（万）"
-              value={rechargeAmount}
-              onChange={e => setRechargeAmount(e.target.value)}
-              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
-            />
-            <input
-              type="number"
-              step="0.01"
-              placeholder="购买价格（元）"
-              value={rechargeCost}
-              onChange={e => setRechargeCost(e.target.value)}
-              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 mb-4"
-            />
+            {(() => {
+              const win = windows.find(w => w.id === rechargeWindowId);
+              const machine = win ? machines.find(m => m.id === win.machineId) : null;
+              return win ? (
+                <div className="mb-4 p-3 bg-black/30 rounded border border-green-500/20">
+                  <div className="text-sm text-gray-400">窗口: <span className="text-white font-mono">#{win.windowNumber}</span></div>
+                  <div className="text-sm text-gray-400">云机: <span className="text-white">{machine?.phone} ({machine?.platform})</span></div>
+                  <div className="text-sm text-gray-400">当前余额: <span className="text-cyber-accent font-mono">{formatWan(win.goldBalance)}</span></div>
+                </div>
+              ) : null;
+            })()}
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-2 block">充值金额（万）</label>
+              <input
+                type="number"
+                placeholder="输入充值金额"
+                value={rechargeAmount}
+                onChange={e => setRechargeAmount(e.target.value)}
+                className="w-full bg-black/40 border border-green-500/30 text-cyber-text font-mono px-3 py-2"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-2 block">采购成本（元）</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="输入采购成本"
+                value={rechargeCost}
+                onChange={e => setRechargeCost(e.target.value)}
+                className="w-full bg-black/40 border border-green-500/30 text-cyber-text font-mono px-3 py-2"
+              />
+              <div className="text-xs text-gray-500 mt-1">填写成本后会自动添加采购记录</div>
+            </div>
             <div className="flex gap-3">
               <button onClick={() => { setRechargeWindowId(null); setRechargeAmount(''); setRechargeCost(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">
                 取消
               </button>
-              <button onClick={handleRecharge} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 font-mono text-sm">
+              <button 
+                onClick={handleRecharge} 
+                disabled={!rechargeAmount}
+                className="flex-1 py-2 bg-green-500/20 border border-green-500 text-green-400 hover:bg-green-500/30 font-mono text-sm disabled:opacity-50"
+              >
                 确认充值
               </button>
             </div>

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock, Plus } from 'lucide-react';
 import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { Staff, OrderRecord, Settings, CloudWindow, CloudMachine, WindowResult } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
@@ -15,9 +15,10 @@ interface StaffManagerProps {
   onDeleteOrder: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onCompleteOrder?: (orderId: string, windowResults: WindowResult[]) => void;
+  onAddWindowToOrder?: (orderId: string, windowId: string) => Promise<void>;
 }
 
-export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, cloudWindows, cloudMachines, onAddStaff, onDeleteStaff, onDeleteOrder, onAssignWindow, onCompleteOrder }) => {
+export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, cloudWindows, cloudMachines, onAddStaff, onDeleteStaff, onDeleteOrder, onAssignWindow, onCompleteOrder, onAddWindowToOrder }) => {
   console.log('StaffManager received staffList:', staffList);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffUsername, setNewStaffUsername] = useState('');
@@ -107,18 +108,41 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   // 当前查看的订单
   const activeOrder = activeOrderId ? orders.find(o => o.id === activeOrderId) : null;
 
-  // 处理完成订单
+  // 当打开完成订单弹窗时，初始化窗口余额为员工当前窗口
+  useEffect(() => {
+    if (activeOrderId && activeOrder) {
+      const staffWindows = cloudWindows.filter(w => w.userId === activeOrder.staffId);
+      setOrderWindowBalances(prev => {
+        const currentBalances = prev[activeOrderId] || {};
+        const newBalances: Record<string, string> = {};
+        // 为员工当前窗口初始化余额
+        staffWindows.forEach(w => {
+          newBalances[w.id] = currentBalances[w.id] || '';
+        });
+        return { ...prev, [activeOrderId]: newBalances };
+      });
+    }
+  }, [activeOrderId, activeOrder?.staffId, cloudWindows]);
+
+  // 处理完成订单 - 使用员工当前窗口
   const handleCompleteOrder = (order: OrderRecord) => {
-    if (!order.windowSnapshots || !onCompleteOrder) return;
+    if (!onCompleteOrder) return;
     
-    const results: WindowResult[] = order.windowSnapshots.map(snap => {
-      const endBalance = windowBalances[snap.windowId] 
-        ? parseFloat(windowBalances[snap.windowId]) * 10000
-        : snap.startBalance;
+    // 获取员工当前窗口
+    const staffWindows = cloudWindows.filter(w => w.userId === order.staffId);
+    if (staffWindows.length === 0) {
+      showAlert('无法完成', '该员工当前没有分配的窗口');
+      return;
+    }
+    
+    const results: WindowResult[] = staffWindows.map(window => {
+      const endBalance = windowBalances[window.id] 
+        ? parseFloat(windowBalances[window.id]) * 10000
+        : window.goldBalance; // 不填则默认无消耗
       return {
-        windowId: snap.windowId,
+        windowId: window.id,
         endBalance,
-        consumed: snap.startBalance - endBalance
+        consumed: window.goldBalance - endBalance
       };
     });
 
@@ -360,9 +384,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                               {onCompleteOrder && (
                                 <CyberButton onClick={() => {
                                   setActiveOrderId(order.id);
+                                  // 初始化窗口余额为员工当前窗口
+                                  const staffWindows = cloudWindows.filter(w => w.userId === order.staffId);
                                   const balances: Record<string, string> = {};
-                                  order.windowSnapshots?.forEach(snap => {
-                                    balances[snap.windowId] = '';
+                                  staffWindows.forEach(w => {
+                                    balances[w.id] = '';
                                   });
                                   if (!orderWindowBalances[order.id]) {
                                     setOrderWindowBalances(prev => ({ ...prev, [order.id]: balances }));
@@ -486,7 +512,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
 
       <ModalComponent />
 
-      {/* 完成订单弹窗 */}
+      {/* 完成订单弹窗 - 使用员工当前窗口 */}
       {activeOrder && onCompleteOrder && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -499,6 +525,10 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
               <div>
                 <div className="text-sm text-gray-400">员工</div>
                 <div className="text-lg font-mono text-white">{staffList.find(s => s.id === activeOrder.staffId)?.name || '未知'}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">当前窗口数</div>
+                <div className="text-lg font-mono text-cyber-primary">{cloudWindows.filter(w => w.userId === activeOrder.staffId).length}</div>
               </div>
             </div>
 
@@ -517,26 +547,28 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             
             <div className="text-sm text-cyber-primary font-mono mb-2">请填写每个窗口的剩余哈夫币（万）(不填则默认无消耗):</div>
             <div className="space-y-3 mb-6">
-              {activeOrder.windowSnapshots?.map(snap => {
-                const inputValue = windowBalances[snap.windowId] || '';
-                const endBalance = inputValue ? parseFloat(inputValue) * 10000 : snap.startBalance;
-                const consumed = snap.startBalance - endBalance;
+              {/* 使用员工当前窗口 */}
+              {cloudWindows.filter(w => w.userId === activeOrder.staffId).map(window => {
+                const inputValue = windowBalances[window.id] || '';
+                const startBalance = window.goldBalance;
+                const endBalance = inputValue ? parseFloat(inputValue) * 10000 : startBalance;
+                const consumed = startBalance - endBalance;
                 return (
-                  <div key={snap.windowId} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
+                  <div key={window.id} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
                     <div className="flex justify-between items-center mb-2">
                       <div>
-                        <span className="font-mono">#{snap.windowNumber}</span>
-                        <span className="text-xs text-gray-500 ml-2">{snap.machineName}</span>
+                        <span className="font-mono">#{window.windowNumber}</span>
+                        <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
                         {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
                       </div>
-                      <div className="text-xs text-gray-400">开始: {formatWan(snap.startBalance)}</div>
+                      <div className="text-xs text-gray-400">当前余额: {formatWan(startBalance)}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        placeholder={`${toWan(snap.startBalance)} 万 (当前余额)`}
+                        placeholder={`${toWan(startBalance)} 万 (当前余额)`}
                         value={inputValue}
-                        onChange={e => setWindowBalances({...windowBalances, [snap.windowId]: e.target.value})}
+                        onChange={e => setWindowBalances({...windowBalances, [window.id]: e.target.value})}
                         className="flex-1 bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 placeholder:text-gray-600 placeholder:opacity-50"
                       />
                       <div className={`text-sm font-mono min-w-[70px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
@@ -545,11 +577,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                       <button
                         type="button"
                         onClick={() => {
-                          const startBalanceWan = String(snap.startBalance / 10000);
-                          setWindowBalances({...windowBalances, [snap.windowId]: startBalanceWan});
+                          const startBalanceWan = String(startBalance / 10000);
+                          setWindowBalances({...windowBalances, [window.id]: startBalanceWan});
                         }}
                         className={`px-2 py-2 text-xs font-mono border ${
-                          inputValue === String(snap.startBalance / 10000)
+                          inputValue === String(startBalance / 10000)
                             ? 'bg-green-500/20 border-green-500 text-green-400' 
                             : 'border-green-500 text-green-400 hover:bg-green-500/20'
                         }`}
@@ -559,7 +591,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                       <button
                         type="button"
                         onClick={() => {
-                          setWindowBalances({...windowBalances, [snap.windowId]: '0'});
+                          setWindowBalances({...windowBalances, [window.id]: '0'});
                         }}
                         className={`px-2 py-2 text-xs font-mono border ${
                           inputValue === '0'
@@ -575,18 +607,18 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
               })}
             </div>
 
-            {/* 汇总 */}
+            {/* 汇总 - 使用员工当前窗口计算 */}
             <div className="mb-6 p-3 bg-cyber-primary/10 rounded border border-cyber-primary/30">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-xs text-gray-400">总消耗 (万)</div>
                   <div className="font-mono text-lg">
                     {toWan(
-                      (activeOrder.windowSnapshots?.reduce((sum, snap) => {
-                        const end = windowBalances[snap.windowId] 
-                          ? parseFloat(windowBalances[snap.windowId]) * 10000
-                          : snap.startBalance;
-                        return sum + (snap.startBalance - end);
+                      (cloudWindows.filter(w => w.userId === activeOrder.staffId).reduce((sum, w) => {
+                        const end = windowBalances[w.id] 
+                          ? parseFloat(windowBalances[w.id]) * 10000
+                          : w.goldBalance;
+                        return sum + (w.goldBalance - end);
                       }, 0) || 0) +
                       (activeOrder.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0)
                     )}
@@ -600,11 +632,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                   <div className="text-xs text-gray-400">损耗 (万)</div>
                   <div className="font-mono text-lg text-red-400">
                     {(() => {
-                      const currentConsumed = activeOrder.windowSnapshots?.reduce((sum, snap) => {
-                        const end = windowBalances[snap.windowId] 
-                          ? parseFloat(windowBalances[snap.windowId]) * 10000
-                          : snap.startBalance;
-                        return sum + (snap.startBalance - end);
+                      const currentConsumed = cloudWindows.filter(w => w.userId === activeOrder.staffId).reduce((sum, w) => {
+                        const end = windowBalances[w.id] 
+                          ? parseFloat(windowBalances[w.id]) * 10000
+                          : w.goldBalance;
+                        return sum + (w.goldBalance - end);
                       }, 0) || 0;
                       const partialConsumed = activeOrder.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0;
                       const totalConsumed = currentConsumed + partialConsumed;
@@ -627,7 +659,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             </div>
           </div>
         </div>
-      )}
+      )} 
 
       {/* 确认完成弹窗（消耗不足时） */}
       {pendingCompleteOrder && (
