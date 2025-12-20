@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight } from 'lucide-react';
-import { GlassCard, CyberInput, SectionHeader, useCyberModal } from './CyberUI';
-import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot } from '../types';
+import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight, Clock, CheckCircle } from 'lucide-react';
+import { GlassCard, CyberInput, SectionHeader, CyberButton, useCyberModal } from './CyberUI';
+import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot, WindowResult } from '../types';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onResumeOrder: (orderId: string, newStaffId?: string) => Promise<boolean>;
+  onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
 }
 
 export const Dispatch: React.FC<Props> = ({ 
@@ -27,7 +28,8 @@ export const Dispatch: React.FC<Props> = ({
   onAddWindow,
   onDeleteWindow,
   onAssignWindow,
-  onResumeOrder
+  onResumeOrder,
+  onCompleteOrder
 }) => {
   const today = new Date().toISOString().split('T')[0];
 
@@ -48,10 +50,40 @@ export const Dispatch: React.FC<Props> = ({
   const [transferOrderId, setTransferOrderId] = useState<string | null>(null);
   const [transferStaffId, setTransferStaffId] = useState('');
 
+  // 完成订单相关状态
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [orderWindowBalances, setOrderWindowBalances] = useState<Record<string, Record<string, string>>>({});
+  const [orderSavedWindows, setOrderSavedWindows] = useState<Record<string, Record<string, boolean>>>({});
+  const [pendingCompleteOrder, setPendingCompleteOrder] = useState<{ order: OrderRecord; results: WindowResult[] } | null>(null);
+
+  // 当前订单的窗口余额和保存状态
+  const windowBalances = activeOrderId ? (orderWindowBalances[activeOrderId] || {}) : {};
+  const savedWindows = activeOrderId ? (orderSavedWindows[activeOrderId] || {}) : {};
+  
+  const setWindowBalances = (balances: Record<string, string>) => {
+    if (activeOrderId) {
+      setOrderWindowBalances(prev => ({ ...prev, [activeOrderId]: balances }));
+    }
+  };
+  
+  const setSavedWindows = (saved: Record<string, boolean>) => {
+    if (activeOrderId) {
+      setOrderSavedWindows(prev => ({ ...prev, [activeOrderId]: saved }));
+    }
+  };
+
   // 暂停中的订单
   const pausedOrders = useMemo(() => {
     return orders.filter(o => o.status === 'paused');
   }, [orders]);
+
+  // 进行中的订单
+  const pendingOrders = useMemo(() => {
+    return orders.filter(o => o.status === 'pending');
+  }, [orders]);
+
+  // 当前查看的订单
+  const activeOrder = pendingOrders.find(o => o.id === activeOrderId);
 
   // 获取员工名称
   const getStaffName = (staffId: string) => {
@@ -81,6 +113,46 @@ export const Dispatch: React.FC<Props> = ({
     }
     setTransferOrderId(null);
     setTransferStaffId('');
+  };
+
+  // 处理完成订单
+  const handleCompleteOrder = (order: OrderRecord) => {
+    if (!order.windowSnapshots) return;
+    
+    const results: WindowResult[] = order.windowSnapshots.map(snap => {
+      const endBalance = windowBalances[snap.windowId] 
+        ? parseFloat(windowBalances[snap.windowId]) * 10000
+        : snap.startBalance;
+      return {
+        windowId: snap.windowId,
+        endBalance,
+        consumed: snap.startBalance - endBalance
+      };
+    });
+
+    const totalConsumed = results.reduce((sum, r) => sum + r.consumed, 0);
+    if (totalConsumed < order.amount) {
+      setPendingCompleteOrder({ order, results });
+      return;
+    }
+
+    onCompleteOrder(order.id, results);
+    setOrderWindowBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
+    setOrderSavedWindows(prev => { const n = {...prev}; delete n[order.id]; return n; });
+    setActiveOrderId(null);
+    showSuccess('操作成功', '订单已完成');
+  };
+
+  // 确认完成订单（消耗不足时）
+  const confirmCompleteOrder = () => {
+    if (pendingCompleteOrder) {
+      onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results);
+      setOrderWindowBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
+      setOrderSavedWindows(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
+      setActiveOrderId(null);
+      setPendingCompleteOrder(null);
+      showSuccess('操作成功', '订单已完成');
+    }
   };
 
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
@@ -259,6 +331,191 @@ export const Dispatch: React.FC<Props> = ({
               </button>
               <button onClick={handleTransferOrder} disabled={!transferStaffId} className="flex-1 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/30 disabled:opacity-50">
                 确认转派
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 进行中的订单 */}
+      {pendingOrders.length > 0 && (
+        <GlassCard>
+          <div className="flex items-center gap-2 mb-4 text-yellow-400">
+            <Clock size={20} />
+            <h2 className="font-mono text-lg">进行中的订单 ({pendingOrders.length})</h2>
+          </div>
+          <div className="space-y-3">
+            {pendingOrders.map(order => (
+              <div key={order.id} className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="font-mono text-lg">{order.date}</div>
+                    <div className="text-sm text-gray-400">
+                      员工: <span className="text-white">{getStaffName(order.staffId)}</span>
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      订单金额: <span className="text-cyber-accent">{order.amount}</span> 万 | 
+                      窗口数: <span className="text-cyber-primary">{order.windowSnapshots?.length || 0}</span>
+                    </div>
+                  </div>
+                  <CyberButton onClick={() => {
+                    setActiveOrderId(order.id);
+                    const balances: Record<string, string> = {};
+                    order.windowSnapshots?.forEach(snap => {
+                      balances[snap.windowId] = '';
+                    });
+                    if (!orderWindowBalances[order.id]) {
+                      setOrderWindowBalances(prev => ({ ...prev, [order.id]: balances }));
+                    }
+                  }}>
+                    完成订单
+                  </CyberButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* 完成订单弹窗 */}
+      {activeOrder && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-mono text-cyber-primary mb-4">完成订单 - {activeOrder.date}</h3>
+            <div className="mb-4 p-3 bg-black/30 rounded flex justify-between items-center">
+              <div>
+                <div className="text-sm text-gray-400">订单金额</div>
+                <div className="text-2xl font-mono text-cyber-accent">{activeOrder.amount} 万</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">员工</div>
+                <div className="text-lg font-mono text-white">{getStaffName(activeOrder.staffId)}</div>
+              </div>
+            </div>
+            
+            <div className="text-sm text-cyber-primary font-mono mb-2">请填写每个窗口的剩余哈夫币（万）(不填则默认无消耗):</div>
+            <div className="space-y-3 mb-6">
+              {activeOrder.windowSnapshots?.map(snap => {
+                const inputValue = windowBalances[snap.windowId] || '';
+                const endBalance = inputValue ? parseFloat(inputValue) * 10000 : snap.startBalance;
+                const consumed = snap.startBalance - endBalance;
+                return (
+                  <div key={snap.windowId} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                      <div>
+                        <span className="font-mono">#{snap.windowNumber}</span>
+                        <span className="text-xs text-gray-500 ml-2">{snap.machineName}</span>
+                        {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
+                      </div>
+                      <div className="text-xs text-gray-400">开始: {formatWan(snap.startBalance)}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        placeholder={`${toWan(snap.startBalance)} 万 (当前余额)`}
+                        value={inputValue}
+                        onChange={e => setWindowBalances({...windowBalances, [snap.windowId]: e.target.value})}
+                        className="flex-1 bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 placeholder:text-gray-600 placeholder:opacity-50"
+                      />
+                      <div className={`text-sm font-mono min-w-[80px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        消耗: {formatWan(consumed)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const startBalanceWan = String(snap.startBalance / 10000);
+                          setWindowBalances({...windowBalances, [snap.windowId]: startBalanceWan});
+                        }}
+                        className={`px-3 py-2 text-xs font-mono border ${
+                          inputValue === String(snap.startBalance / 10000)
+                            ? 'bg-green-500/20 border-green-500 text-green-400' 
+                            : 'border-green-500 text-green-400 hover:bg-green-500/20'
+                        }`}
+                      >
+                        未使用
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWindowBalances({...windowBalances, [snap.windowId]: '0'});
+                        }}
+                        className={`px-3 py-2 text-xs font-mono border ${
+                          inputValue === '0'
+                            ? 'bg-red-500/20 border-red-500 text-red-400' 
+                            : 'border-orange-500 text-orange-400 hover:bg-orange-500/20'
+                        }`}
+                      >
+                        消耗完
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 汇总 */}
+            <div className="mb-6 p-3 bg-cyber-primary/10 rounded border border-cyber-primary/30">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-xs text-gray-400">总消耗 (万)</div>
+                  <div className="font-mono text-lg">
+                    {toWan(activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                      const end = windowBalances[snap.windowId] 
+                        ? parseFloat(windowBalances[snap.windowId]) * 10000
+                        : snap.startBalance;
+                      return sum + (snap.startBalance - end);
+                    }, 0) || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">订单金额 (万)</div>
+                  <div className="font-mono text-lg text-cyber-accent">{activeOrder.amount}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">损耗 (万)</div>
+                  <div className="font-mono text-lg text-red-400">
+                    {(() => {
+                      const totalConsumed = activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                        const end = windowBalances[snap.windowId] 
+                          ? parseFloat(windowBalances[snap.windowId]) * 10000
+                          : snap.startBalance;
+                        return sum + (snap.startBalance - end);
+                      }, 0) || 0;
+                      const orderAmountInCoins = activeOrder.amount * 10000;
+                      const loss = totalConsumed - orderAmountInCoins;
+                      return loss > 0 ? toWan(loss) : '0';
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setActiveOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <CyberButton onClick={() => handleCompleteOrder(activeOrder)} className="flex-1">
+                <CheckCircle size={16} className="mr-2" /> 确认完成
+              </CyberButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 确认完成弹窗（消耗不足时） */}
+      {pendingCompleteOrder && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-md w-full">
+            <h3 className="text-xl font-mono text-yellow-400 mb-4">确认完成</h3>
+            <p className="text-gray-400 mb-4">
+              总消耗量小于订单金额，确定要完成此订单吗？
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setPendingCompleteOrder(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <button onClick={confirmCompleteOrder} className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30">
+                确认完成
               </button>
             </div>
           </div>

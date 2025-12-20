@@ -126,7 +126,29 @@ app.get('/api/staff/:tenantId', async (req, res) => {
 // 通用 CRUD - 获取数据
 app.get('/api/data/:collection/:tenantId', async (req, res) => {
   try {
-    const docs = await Data.find({ collection: req.params.collection, tenantId: req.params.tenantId });
+    const { collection, tenantId } = req.params;
+    
+    // 特殊处理云机：需要获取该租户拥有的云机 + 该租户窗口关联的云机
+    if (collection === 'cloudMachines') {
+      // 先获取该租户的所有窗口
+      const windows = await Data.find({ collection: 'cloudWindows', tenantId });
+      const windowMachineIds = windows.map(w => w.data?.machineId).filter(Boolean);
+      
+      // 获取该租户拥有的云机 + 窗口关联的云机
+      const docs = await Data.find({
+        collection: 'cloudMachines',
+        $or: [
+          { tenantId },
+          { _id: { $in: windowMachineIds.map(id => {
+            try { return new mongoose.Types.ObjectId(id); } catch(e) { return null; }
+          }).filter(Boolean) } }
+        ]
+      });
+      
+      return res.json({ success: true, data: docs.map(d => ({ id: d._id, ...d.data })) });
+    }
+    
+    const docs = await Data.find({ collection, tenantId });
     res.json({ success: true, data: docs.map(d => ({ id: d._id, ...d.data })) });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -362,11 +384,19 @@ app.post('/api/transfer/respond', async (req, res) => {
     if (!transfer) return res.json({ success: false, error: '转让请求不存在' });
     
     if (accept) {
-      // 更新窗口的 tenantId
-      await Data.findByIdAndUpdate(transfer.windowId, { 
-        tenantId: transfer.toTenantId,
-        'data.userId': null  // 清除分配的员工
-      });
+      // 更新窗口的 tenantId，只转移窗口，不转移云机
+      let windowDoc = await Data.findById(transfer.windowId);
+      if (!windowDoc) {
+        windowDoc = await Data.findOne({ collection: 'cloudWindows', 'data.id': transfer.windowId });
+      }
+      
+      if (windowDoc) {
+        windowDoc.tenantId = transfer.toTenantId;
+        if (windowDoc.data) {
+          windowDoc.data.userId = null;  // 清除分配的员工
+        }
+        await windowDoc.save();
+      }
     }
     
     transfer.status = accept ? 'accepted' : 'rejected';
@@ -479,10 +509,7 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       // 计算利润 = 转让价格 - 成本
       const profit = transfer.price - transferCost;
       
-      // 更新所有窗口的 tenantId，并清除分配的员工
-      // 同时需要把窗口对应的云机也转移过去
-      const machineIdsToTransfer = new Set();
-      
+      // 只更新窗口的 tenantId，不转移云机（云机只是载体，可以被多个租户的窗口共享）
       for (const windowId of transfer.windowIds) {
         // 先找到窗口
         let windowDoc = await Data.findById(windowId);
@@ -491,34 +518,15 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
         }
         
         if (windowDoc) {
-          // 记录需要转移的云机ID
-          if (windowDoc.data && windowDoc.data.machineId) {
-            machineIdsToTransfer.add(windowDoc.data.machineId);
-          }
-          
-          // 更新窗口
+          // 更新窗口的租户ID，并清除分配的员工
           windowDoc.tenantId = transfer.toTenantId;
           if (windowDoc.data) {
             windowDoc.data.userId = null;
           }
           await windowDoc.save();
-          console.log('Window updated:', windowId);
+          console.log('Window transferred:', windowId);
         } else {
           console.log('Window not found:', windowId);
-        }
-      }
-      
-      // 转移相关的云机
-      for (const machineId of machineIdsToTransfer) {
-        let machineDoc = await Data.findById(machineId);
-        if (!machineDoc) {
-          machineDoc = await Data.findOne({ collection: 'cloudMachines', 'data.id': machineId });
-        }
-        
-        if (machineDoc) {
-          machineDoc.tenantId = transfer.toTenantId;
-          await machineDoc.save();
-          console.log('Machine transferred:', machineId);
         }
       }
       
