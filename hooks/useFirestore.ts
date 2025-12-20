@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dataApi, staffApi, settingsApi } from '../api';
-import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest } from '../types';
+import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest, PartialWindowResult } from '../types';
 
 const DEFAULT_SETTINGS: Settings = {
   employeeCostRate: 12,
@@ -337,6 +337,96 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  // 释放订单中的窗口（中途释放）
+  const releaseOrderWindow = async (
+    orderId: string,
+    windowId: string,
+    endBalance: number,
+    staffId: string,
+    staffName: string
+  ) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !order.windowSnapshots) return;
+
+    const snapshot = order.windowSnapshots.find(s => s.windowId === windowId);
+    if (!snapshot) return;
+
+    const consumed = snapshot.startBalance - endBalance;
+
+    // 创建中途释放记录
+    const partialResult: PartialWindowResult = {
+      windowId,
+      windowNumber: snapshot.windowNumber,
+      machineName: snapshot.machineName,
+      staffId,
+      staffName,
+      startBalance: snapshot.startBalance,
+      endBalance,
+      consumed,
+      releasedAt: new Date().toISOString()
+    };
+
+    // 更新订单：添加到 partialResults，从 windowSnapshots 移除
+    const newPartialResults = [...(order.partialResults || []), partialResult];
+    const newWindowSnapshots = order.windowSnapshots.filter(s => s.windowId !== windowId);
+
+    await dataApi.update('orders', orderId, {
+      ...order,
+      partialResults: newPartialResults,
+      windowSnapshots: newWindowSnapshots
+    });
+
+    // 更新窗口余额并释放
+    const window = cloudWindows.find(w => w.id === windowId);
+    if (window) {
+      await dataApi.update('cloudWindows', windowId, {
+        ...window,
+        goldBalance: endBalance,
+        userId: null
+      });
+    }
+
+    await loadData();
+  };
+
+  // 添加窗口到订单
+  const addWindowToOrder = async (orderId: string, windowId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const window = cloudWindows.find(w => w.id === windowId);
+    if (!window) return;
+
+    const machine = cloudMachines.find(m => m.id === window.machineId);
+    const machineName = machine ? `${machine.phone} (${machine.platform})` : '未知';
+
+    // 创建新的窗口快照
+    const newSnapshot: WindowSnapshot = {
+      windowId: window.id,
+      machineId: window.machineId,
+      windowNumber: window.windowNumber,
+      machineName,
+      startBalance: window.goldBalance
+    };
+
+    // 更新订单
+    const newWindowSnapshots = [...(order.windowSnapshots || []), newSnapshot];
+    await dataApi.update('orders', orderId, {
+      ...order,
+      windowSnapshots: newWindowSnapshots
+    });
+
+    // 如果窗口是空闲的，分配给当前订单的员工
+    if (!window.userId) {
+      await dataApi.update('cloudWindows', windowId, {
+        ...window,
+        userId: order.staffId
+      });
+    }
+
+    await loadData();
+  };
+
   return {
     purchases,
     orders,
@@ -371,6 +461,8 @@ export function useFirestore(tenantId: string | null) {
     createWindowRequest,
     processWindowRequest,
     rechargeWindow,
+    releaseOrderWindow,
+    addWindowToOrder,
     refreshData: loadData
   };
 }

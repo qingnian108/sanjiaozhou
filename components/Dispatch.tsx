@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight, Clock, CheckCircle } from 'lucide-react';
+import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight, Clock, CheckCircle, Unlock } from 'lucide-react';
 import { GlassCard, CyberInput, SectionHeader, CyberButton, useCyberModal } from './CyberUI';
 import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot, WindowResult } from '../types';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -16,6 +16,9 @@ interface Props {
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onResumeOrder: (orderId: string, newStaffId?: string) => Promise<boolean>;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
+  onReleaseOrderWindow: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
+  onAddWindowToOrder: (orderId: string, windowId: string) => void;
+  onDeleteOrder: (orderId: string) => void;
 }
 
 export const Dispatch: React.FC<Props> = ({ 
@@ -29,7 +32,10 @@ export const Dispatch: React.FC<Props> = ({
   onDeleteWindow,
   onAssignWindow,
   onResumeOrder,
-  onCompleteOrder
+  onCompleteOrder,
+  onReleaseOrderWindow,
+  onAddWindowToOrder,
+  onDeleteOrder
 }) => {
   const today = new Date().toISOString().split('T')[0];
 
@@ -55,6 +61,16 @@ export const Dispatch: React.FC<Props> = ({
   const [orderWindowBalances, setOrderWindowBalances] = useState<Record<string, Record<string, string>>>({});
   const [orderSavedWindows, setOrderSavedWindows] = useState<Record<string, Record<string, boolean>>>({});
   const [pendingCompleteOrder, setPendingCompleteOrder] = useState<{ order: OrderRecord; results: WindowResult[] } | null>(null);
+  
+  // 释放窗口相关状态
+  const [releaseWindowId, setReleaseWindowId] = useState<string | null>(null);
+  const [releaseBalance, setReleaseBalance] = useState('');
+  
+  // 添加窗口到订单相关状态
+  const [showAddWindowToOrder, setShowAddWindowToOrder] = useState(false);
+  
+  // 删除订单确认状态
+  const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
 
   // 当前订单的窗口余额和保存状态
   const windowBalances = activeOrderId ? (orderWindowBalances[activeOrderId] || {}) : {};
@@ -155,6 +171,55 @@ export const Dispatch: React.FC<Props> = ({
     }
   };
 
+  // 处理释放窗口
+  const handleReleaseWindow = (windowId: string) => {
+    const balance = windowBalances[windowId] || '';
+    setReleaseWindowId(windowId);
+    setReleaseBalance(balance);
+  };
+
+  // 确认释放窗口
+  const confirmReleaseWindow = () => {
+    if (!releaseWindowId || !activeOrder) return;
+    
+    const snapshot = activeOrder.windowSnapshots?.find(s => s.windowId === releaseWindowId);
+    if (!snapshot) return;
+    
+    // 如果没有填写余额，使用开始余额（无消耗）
+    const endBalance = releaseBalance ? parseFloat(releaseBalance) * 10000 : snapshot.startBalance;
+    const staff = staffList.find(s => s.id === activeOrder.staffId);
+    const staffName = staff?.name || '未知';
+    
+    onReleaseOrderWindow(activeOrder.id, releaseWindowId, endBalance, activeOrder.staffId, staffName);
+    
+    // 从当前窗口余额中移除
+    const newBalances = { ...windowBalances };
+    delete newBalances[releaseWindowId];
+    setWindowBalances(newBalances);
+    
+    setReleaseWindowId(null);
+    setReleaseBalance('');
+    showSuccess('操作成功', '窗口已释放，消耗已记录');
+  };
+
+  // 处理添加窗口到订单
+  const handleAddWindowToOrder = (windowId: string) => {
+    if (!activeOrder) return;
+    onAddWindowToOrder(activeOrder.id, windowId);
+    setShowAddWindowToOrder(false);
+    showSuccess('操作成功', '窗口已添加到订单');
+  };
+
+  // 获取可添加到订单的窗口（当前员工的窗口 + 空闲窗口，排除已在订单中的）
+  const getAvailableWindowsForOrder = () => {
+    if (!activeOrder) return [];
+    const orderWindowIds = activeOrder.windowSnapshots?.map(s => s.windowId) || [];
+    return cloudWindows.filter(w => 
+      !orderWindowIds.includes(w.id) && 
+      (w.userId === activeOrder.staffId || !w.userId)
+    );
+  };
+
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
@@ -203,8 +268,8 @@ export const Dispatch: React.FC<Props> = ({
     setSelectedWindowIds(selectedWindowIds.filter(id => id !== windowId));
   };
 
-  // 释放窗口（取消分配）
-  const handleReleaseWindow = (windowId: string, e: React.MouseEvent) => {
+  // 释放窗口（取消分配给员工）
+  const handleUnassignWindow = (windowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     onAssignWindow(windowId, null);
     setSelectedWindowIds(selectedWindowIds.filter(id => id !== windowId));
@@ -358,18 +423,27 @@ export const Dispatch: React.FC<Props> = ({
                       窗口数: <span className="text-cyber-primary">{order.windowSnapshots?.length || 0}</span>
                     </div>
                   </div>
-                  <CyberButton onClick={() => {
-                    setActiveOrderId(order.id);
-                    const balances: Record<string, string> = {};
-                    order.windowSnapshots?.forEach(snap => {
-                      balances[snap.windowId] = '';
-                    });
-                    if (!orderWindowBalances[order.id]) {
-                      setOrderWindowBalances(prev => ({ ...prev, [order.id]: balances }));
-                    }
-                  }}>
-                    完成订单
-                  </CyberButton>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteOrderId(order.id)}
+                      className="px-3 py-2 bg-red-500/20 border border-red-500/50 text-red-400 text-sm hover:bg-red-500/30 flex items-center gap-1"
+                    >
+                      <Trash2 size={14} /> 删除
+                    </button>
+                    <CyberButton onClick={() => {
+                      setActiveOrderId(order.id);
+                      const balances: Record<string, string> = {};
+                      order.windowSnapshots?.forEach(snap => {
+                        balances[snap.windowId] = '';
+                      });
+                      if (!orderWindowBalances[order.id]) {
+                        setOrderWindowBalances(prev => ({ ...prev, [order.id]: balances }));
+                      }
+                    }}>
+                      完成订单
+                    </CyberButton>
+                  </div>
                 </div>
               </div>
             ))}
@@ -391,7 +465,27 @@ export const Dispatch: React.FC<Props> = ({
                 <div className="text-sm text-gray-400">员工</div>
                 <div className="text-lg font-mono text-white">{getStaffName(activeOrder.staffId)}</div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowAddWindowToOrder(true)}
+                className="px-3 py-2 bg-cyber-primary/20 border border-cyber-primary text-cyber-primary text-sm flex items-center gap-1 hover:bg-cyber-primary/30"
+              >
+                <Plus size={14} /> 添加窗口
+              </button>
             </div>
+
+            {/* 已释放的窗口（partialResults） */}
+            {activeOrder.partialResults && activeOrder.partialResults.length > 0 && (
+              <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded">
+                <div className="text-sm text-yellow-400 font-mono mb-2">已释放的窗口:</div>
+                {activeOrder.partialResults.map((pr, idx) => (
+                  <div key={idx} className="text-xs text-gray-400 flex justify-between">
+                    <span>#{pr.windowNumber} - {pr.staffName}</span>
+                    <span>消耗: <span className="text-red-400">{formatWan(pr.consumed)}</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
             
             <div className="text-sm text-cyber-primary font-mono mb-2">请填写每个窗口的剩余哈夫币（万）(不填则默认无消耗):</div>
             <div className="space-y-3 mb-6">
@@ -409,7 +503,7 @@ export const Dispatch: React.FC<Props> = ({
                       </div>
                       <div className="text-xs text-gray-400">开始: {formatWan(snap.startBalance)}</div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <input
                         type="number"
                         placeholder={`${toWan(snap.startBalance)} 万 (当前余额)`}
@@ -417,8 +511,8 @@ export const Dispatch: React.FC<Props> = ({
                         onChange={e => setWindowBalances({...windowBalances, [snap.windowId]: e.target.value})}
                         className="flex-1 bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 placeholder:text-gray-600 placeholder:opacity-50"
                       />
-                      <div className={`text-sm font-mono min-w-[80px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        消耗: {formatWan(consumed)}
+                      <div className={`text-sm font-mono min-w-[70px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {formatWan(consumed)}
                       </div>
                       <button
                         type="button"
@@ -426,7 +520,7 @@ export const Dispatch: React.FC<Props> = ({
                           const startBalanceWan = String(snap.startBalance / 10000);
                           setWindowBalances({...windowBalances, [snap.windowId]: startBalanceWan});
                         }}
-                        className={`px-3 py-2 text-xs font-mono border ${
+                        className={`px-2 py-2 text-xs font-mono border ${
                           inputValue === String(snap.startBalance / 10000)
                             ? 'bg-green-500/20 border-green-500 text-green-400' 
                             : 'border-green-500 text-green-400 hover:bg-green-500/20'
@@ -439,7 +533,7 @@ export const Dispatch: React.FC<Props> = ({
                         onClick={() => {
                           setWindowBalances({...windowBalances, [snap.windowId]: '0'});
                         }}
-                        className={`px-3 py-2 text-xs font-mono border ${
+                        className={`px-2 py-2 text-xs font-mono border ${
                           inputValue === '0'
                             ? 'bg-red-500/20 border-red-500 text-red-400' 
                             : 'border-orange-500 text-orange-400 hover:bg-orange-500/20'
@@ -447,24 +541,34 @@ export const Dispatch: React.FC<Props> = ({
                       >
                         消耗完
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReleaseWindow(snap.windowId)}
+                        className="px-2 py-2 text-xs font-mono border border-yellow-500 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-1"
+                      >
+                        <Unlock size={12} /> 释放
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* 汇总 */}
+            {/* 汇总 - 包含已释放窗口的消耗 */}
             <div className="mb-6 p-3 bg-cyber-primary/10 rounded border border-cyber-primary/30">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-xs text-gray-400">总消耗 (万)</div>
                   <div className="font-mono text-lg">
-                    {toWan(activeOrder.windowSnapshots?.reduce((sum, snap) => {
-                      const end = windowBalances[snap.windowId] 
-                        ? parseFloat(windowBalances[snap.windowId]) * 10000
-                        : snap.startBalance;
-                      return sum + (snap.startBalance - end);
-                    }, 0) || 0)}
+                    {toWan(
+                      (activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                        const end = windowBalances[snap.windowId] 
+                          ? parseFloat(windowBalances[snap.windowId]) * 10000
+                          : snap.startBalance;
+                        return sum + (snap.startBalance - end);
+                      }, 0) || 0) +
+                      (activeOrder.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0)
+                    )}
                   </div>
                 </div>
                 <div>
@@ -475,12 +579,14 @@ export const Dispatch: React.FC<Props> = ({
                   <div className="text-xs text-gray-400">损耗 (万)</div>
                   <div className="font-mono text-lg text-red-400">
                     {(() => {
-                      const totalConsumed = activeOrder.windowSnapshots?.reduce((sum, snap) => {
+                      const currentConsumed = activeOrder.windowSnapshots?.reduce((sum, snap) => {
                         const end = windowBalances[snap.windowId] 
                           ? parseFloat(windowBalances[snap.windowId]) * 10000
                           : snap.startBalance;
                         return sum + (snap.startBalance - end);
                       }, 0) || 0;
+                      const partialConsumed = activeOrder.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0;
+                      const totalConsumed = currentConsumed + partialConsumed;
                       const orderAmountInCoins = activeOrder.amount * 10000;
                       const loss = totalConsumed - orderAmountInCoins;
                       return loss > 0 ? toWan(loss) : '0';
@@ -518,6 +624,97 @@ export const Dispatch: React.FC<Props> = ({
                 确认完成
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 释放窗口确认弹窗 */}
+      {releaseWindowId && activeOrder && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-md w-full">
+            <h3 className="text-xl font-mono text-yellow-400 mb-4 flex items-center gap-2">
+              <Unlock size={20} /> 释放窗口
+            </h3>
+            {(() => {
+              const snap = activeOrder.windowSnapshots?.find(s => s.windowId === releaseWindowId);
+              if (!snap) return null;
+              const endBalance = releaseBalance ? parseFloat(releaseBalance) * 10000 : snap.startBalance;
+              const consumed = snap.startBalance - endBalance;
+              return (
+                <>
+                  <div className="mb-4 p-3 bg-black/30 rounded">
+                    <div className="text-sm text-gray-400">窗口: <span className="text-white">#{snap.windowNumber}</span></div>
+                    <div className="text-sm text-gray-400">开始余额: <span className="text-cyber-accent">{formatWan(snap.startBalance)}</span></div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="text-sm text-gray-400 mb-2 block">当前余额（万）</label>
+                    <input
+                      type="number"
+                      value={releaseBalance}
+                      onChange={e => setReleaseBalance(e.target.value)}
+                      placeholder={`${toWan(snap.startBalance)} (不填则无消耗)`}
+                      className="w-full bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2"
+                    />
+                  </div>
+                  <div className="mb-4 p-3 bg-yellow-500/10 rounded">
+                    <div className="text-sm">
+                      消耗: <span className={consumed > 0 ? 'text-red-400' : 'text-green-400'}>{formatWan(consumed)}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      释放后窗口将变为空闲，消耗将记录到员工 {getStaffName(activeOrder.staffId)}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+            <div className="flex gap-3">
+              <button onClick={() => { setReleaseWindowId(null); setReleaseBalance(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <button onClick={confirmReleaseWindow} className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30">
+                确认释放
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 添加窗口到订单弹窗 */}
+      {showAddWindowToOrder && activeOrder && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-mono text-cyber-primary mb-4 flex items-center gap-2">
+              <Plus size={20} /> 添加窗口到订单
+            </h3>
+            {(() => {
+              const availableWindows = getAvailableWindowsForOrder();
+              if (availableWindows.length === 0) {
+                return <p className="text-gray-500 text-center py-4">没有可添加的窗口</p>;
+              }
+              return (
+                <div className="space-y-2 mb-4">
+                  {availableWindows.map(w => {
+                    const machine = cloudMachines.find(m => m.id === w.machineId);
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => handleAddWindowToOrder(w.id)}
+                        className="w-full p-3 bg-black/30 border border-cyber-primary/20 rounded hover:border-cyber-primary/50 text-left flex justify-between items-center"
+                      >
+                        <div>
+                          <span className="font-mono">#{w.windowNumber}</span>
+                          <span className="text-xs text-gray-500 ml-2">{machine?.phone} ({machine?.platform})</span>
+                        </div>
+                        <div className="text-cyber-accent font-mono">{formatWan(w.goldBalance)}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            <button onClick={() => setShowAddWindowToOrder(false)} className="w-full py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+              取消
+            </button>
           </div>
         </div>
       )}
@@ -686,7 +883,7 @@ export const Dispatch: React.FC<Props> = ({
                         <div className="flex justify-center gap-2 pt-2 border-t border-gray-700">
                           <button
                             type="button"
-                            onClick={(e) => handleReleaseWindow(window.id, e)}
+                            onClick={(e) => handleUnassignWindow(window.id, e)}
                             className="px-3 py-1 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/40 rounded text-xs border border-yellow-500/50"
                           >
                             释放
@@ -755,6 +952,35 @@ export const Dispatch: React.FC<Props> = ({
 
       {/* 通用弹窗 */}
       <ModalComponent />
+
+      {/* 删除订单确认弹窗 */}
+      {deleteOrderId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-cyber-panel border border-red-500/30 p-6 max-w-md w-full">
+            <h3 className="text-xl font-mono text-red-400 mb-4 flex items-center gap-2">
+              <Trash2 size={20} /> 删除订单
+            </h3>
+            <p className="text-gray-400 mb-4">
+              确定要删除这个订单吗？此操作不可恢复。
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                取消
+              </button>
+              <button 
+                onClick={() => {
+                  onDeleteOrder(deleteOrderId);
+                  setDeleteOrderId(null);
+                  showSuccess('操作成功', '订单已删除');
+                }} 
+                className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/30"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

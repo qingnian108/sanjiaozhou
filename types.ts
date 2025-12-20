@@ -28,9 +28,23 @@ export interface OrderRecord {
   status: 'pending' | 'paused' | 'completed'; // 订单状态：进行中 | 暂停 | 已完成
   windowSnapshots?: WindowSnapshot[]; // 订单开始时的窗口快照
   windowResults?: WindowResult[]; // 订单结束时的窗口结果
+  partialResults?: PartialWindowResult[]; // 中途释放的窗口结果
   totalConsumed?: number; // 总消耗
   completedAmount?: number; // 已完成金额（暂停时记录）
   executionHistory?: OrderExecution[]; // 执行历史（多人协作时）
+}
+
+// 中途释放的窗口结果
+export interface PartialWindowResult {
+  windowId: string;
+  windowNumber: string;
+  machineName: string;
+  staffId: string;
+  staffName: string;
+  startBalance: number;  // 该员工接手时的余额
+  endBalance: number;    // 释放时的余额
+  consumed: number;      // 消耗量 = startBalance - endBalance
+  releasedAt: string;    // 释放时间
 }
 
 // 订单执行记录（支持多人协作）
