@@ -164,3 +164,88 @@ export interface WindowRecharge {
   createdAt: string;
   createdBy: string; // 操作人
 }
+
+// ========== 收费系统 ==========
+
+// 租户账户
+export interface TenantAccount {
+  id: string;
+  tenantId: string;
+  balance: number;           // 账户余额（元）
+  basePrice: number;         // 基础月费（默认50）
+  freeWindows: number;       // 免费窗口数（默认5）
+  pricePerWindow: number;    // 超出窗口单价（默认10元/个/月）
+  trialEndDate: string;      // 试用期结束日期
+  status: 'trial' | 'active' | 'suspended'; // 试用中 | 正常 | 已暂停
+  createdAt: string;
+}
+
+// 月度账单
+export interface MonthlyBill {
+  id: string;
+  tenantId: string;
+  tenantName?: string;       // 租户名称
+  month: string;             // "2025-01"
+  peakWindowCount: number;   // 峰值窗口数
+  freeWindows: number;       // 免费窗口数
+  extraWindows: number;      // 超出窗口数
+  basePrice: number;         // 基础费
+  extraPrice: number;        // 超出费用
+  totalAmount: number;       // 总金额
+  status: 'pending' | 'paid' | 'overdue';
+  createdAt: string;
+  paidAt?: string;
+}
+
+// 每日窗口快照
+export interface DailyWindowSnapshot {
+  id: string;
+  tenantId: string;
+  date: string;              // "2025-01-20"
+  windowCount: number;
+}
+
+// 充值订单（微信支付）
+export interface RechargeOrder {
+  id: string;
+  tenantId: string;
+  tenantName?: string;
+  amount: number;            // 充值金额
+  outTradeNo: string;        // 商户订单号
+  codeUrl?: string;          // 微信支付二维码链接
+  status: 'pending' | 'paid' | 'expired' | 'failed';
+  createdAt: string;
+  paidAt?: string;
+  wxTransactionId?: string;  // 微信支付订单号
+}
+
+// 充值记录（成功的）
+export interface RechargeRecord {
+  id: string;
+  tenantId: string;
+  tenantName?: string;
+  orderId: string;           // 关联充值订单
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  method: 'wechat' | 'manual'; // 微信支付 | 手动充值
+  createdAt: string;
+  note?: string;
+}
+
+// 扣费记录
+export interface DeductionRecord {
+  id: string;
+  tenantId: string;
+  billId: string;            // 关联账单
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  createdAt: string;
+}
+
+// 超级管理员
+export interface SuperAdmin {
+  id: string;
+  username: string;
+}

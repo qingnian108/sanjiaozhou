@@ -74,3 +74,47 @@ export const machineTransferApi = {
     request('/machine-transfer/respond', { method: 'POST', body: JSON.stringify({ transferId, accept }) }),
   cancel: (id: string) => request(`/machine-transfer/${id}`, { method: 'DELETE' })
 };
+
+// 账户相关
+export const accountApi = {
+  get: (tenantId: string) => request(`/account/${tenantId}`),
+  getBills: (tenantId: string) => request(`/bills/${tenantId}`),
+  getRecharges: (tenantId: string) => request(`/recharges/${tenantId}`)
+};
+
+// 充值相关
+export const rechargeApi = {
+  create: (data: { tenantId: string; tenantName: string; amount: number }) =>
+    request('/recharge/create', { method: 'POST', body: JSON.stringify(data) }),
+  query: (orderId: string) => request(`/recharge/query/${orderId}`)
+};
+
+// 超级管理员相关
+export const superApi = {
+  login: (username: string, password: string) =>
+    request('/super/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  getTenants: () => request('/super/tenants'),
+  chargeTenant: (tenantId: string, amount: number, note?: string) =>
+    request(`/super/tenant/${tenantId}/charge`, { method: 'POST', body: JSON.stringify({ amount, note }) }),
+  suspendTenant: (tenantId: string) =>
+    request(`/super/tenant/${tenantId}/suspend`, { method: 'POST' }),
+  activateTenant: (tenantId: string) =>
+    request(`/super/tenant/${tenantId}/activate`, { method: 'POST' }),
+  updateTenantSettings: (tenantId: string, settings: { basePrice?: number; freeWindows?: number; pricePerWindow?: number }) =>
+    request(`/super/tenant/${tenantId}/settings`, { method: 'POST', body: JSON.stringify(settings) }),
+  getBills: () => request('/super/bills'),
+  payBill: (billId: string) =>
+    request(`/super/bill/${billId}/pay`, { method: 'POST' }),
+  getStats: () => request('/super/stats')
+};
+
+// 定时任务
+export const cronApi = {
+  dailySnapshot: () => request('/cron/daily-snapshot', { method: 'POST' }),
+  monthlyBill: (month?: string) => request('/cron/monthly-bill', { method: 'POST', body: JSON.stringify({ month }) }),
+  checkTrial: () => request('/cron/check-trial', { method: 'POST' })
+};
+
+// 初始化超管
+export const initSuperAdmin = (username: string, password: string) =>
+  request('/init-super-admin', { method: 'POST', body: JSON.stringify({ username, password }) });

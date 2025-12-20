@@ -2,10 +2,22 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ========== 微信支付配置 ==========
+// 请在环境变量或配置文件中设置这些值
+const WECHAT_PAY_CONFIG = {
+  mchid: process.env.WECHAT_MCHID || '',           // 商户号
+  appid: process.env.WECHAT_APPID || '',           // 应用ID
+  apiV3Key: process.env.WECHAT_API_V3_KEY || '',   // APIv3密钥
+  serialNo: process.env.WECHAT_SERIAL_NO || '',    // 证书序列号
+  privateKey: process.env.WECHAT_PRIVATE_KEY || '', // 私钥内容
+  notifyUrl: process.env.WECHAT_NOTIFY_URL || 'https://your-domain.com/api/recharge/notify'
+};
 
 // 连接 MongoDB
 mongoose.connect('mongodb://127.0.0.1:27017/sanjiaozhou')
@@ -16,12 +28,79 @@ mongoose.connect('mongodb://127.0.0.1:27017/sanjiaozhou')
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'staff'], default: 'admin' },
+  role: { type: String, enum: ['super', 'admin', 'staff'], default: 'admin' },
   name: String,
   tenantId: String,
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model('User', UserSchema);
+
+// 租户账户模型
+const TenantAccountSchema = new mongoose.Schema({
+  tenantId: { type: String, required: true, unique: true },
+  balance: { type: Number, default: 0 },
+  basePrice: { type: Number, default: 50 },
+  freeWindows: { type: Number, default: 5 },
+  pricePerWindow: { type: Number, default: 10 },
+  trialEndDate: String,
+  status: { type: String, enum: ['trial', 'active', 'suspended'], default: 'trial' },
+  createdAt: { type: Date, default: Date.now }
+});
+const TenantAccount = mongoose.model('TenantAccount', TenantAccountSchema);
+
+// 月度账单模型
+const MonthlyBillSchema = new mongoose.Schema({
+  tenantId: String,
+  tenantName: String,
+  month: String,
+  peakWindowCount: Number,
+  freeWindows: Number,
+  extraWindows: Number,
+  basePrice: Number,
+  extraPrice: Number,
+  totalAmount: Number,
+  status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now },
+  paidAt: Date
+});
+const MonthlyBill = mongoose.model('MonthlyBill', MonthlyBillSchema);
+
+// 每日窗口快照模型
+const DailySnapshotSchema = new mongoose.Schema({
+  tenantId: String,
+  date: String,
+  windowCount: Number,
+  createdAt: { type: Date, default: Date.now }
+});
+const DailySnapshot = mongoose.model('DailySnapshot', DailySnapshotSchema);
+
+// 充值订单模型
+const RechargeOrderSchema = new mongoose.Schema({
+  tenantId: String,
+  tenantName: String,
+  amount: Number,
+  outTradeNo: { type: String, unique: true },
+  codeUrl: String,
+  status: { type: String, enum: ['pending', 'paid', 'expired', 'failed'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now },
+  paidAt: Date,
+  wxTransactionId: String
+});
+const RechargeOrder = mongoose.model('RechargeOrder', RechargeOrderSchema);
+
+// 充值记录模型
+const RechargeRecordSchema = new mongoose.Schema({
+  tenantId: String,
+  tenantName: String,
+  orderId: String,
+  amount: Number,
+  balanceBefore: Number,
+  balanceAfter: Number,
+  method: { type: String, enum: ['wechat', 'manual'], default: 'wechat' },
+  createdAt: { type: Date, default: Date.now },
+  note: String
+});
+const RechargeRecord = mongoose.model('RechargeRecord', RechargeRecordSchema);
 
 // 通用数据模型
 const DataSchema = new mongoose.Schema({
@@ -39,14 +118,30 @@ app.post('/api/register', async (req, res) => {
     if (exists) return res.json({ success: false, error: '用户已存在' });
     
     const hash = await bcrypt.hash(password, 10);
+    const tenantId = new mongoose.Types.ObjectId().toString();
     const user = new User({
       username,
       password: hash,
       role: 'admin',
       name: username,
-      tenantId: new mongoose.Types.ObjectId().toString()
+      tenantId
     });
     await user.save();
+    
+    // 创建租户账户，设置7天试用期
+    const trialEndDate = new Date();
+    trialEndDate.setDate(trialEndDate.getDate() + 7);
+    const account = new TenantAccount({
+      tenantId,
+      balance: 0,
+      basePrice: 50,
+      freeWindows: 5,
+      pricePerWindow: 10,
+      trialEndDate: trialEndDate.toISOString().split('T')[0],
+      status: 'trial'
+    });
+    await account.save();
+    
     res.json({ success: true, user: { id: user._id, username, role: 'admin', name: username, tenantId: user.tenantId } });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -572,6 +667,576 @@ app.delete('/api/machine-transfer/:id', async (req, res) => {
   try {
     await MachineTransfer.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 收费系统 API ==========
+
+// 获取租户账户信息
+app.get('/api/account/:tenantId', async (req, res) => {
+  try {
+    let account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) {
+      // 为老用户创建账户（兼容）
+      const trialEndDate = new Date();
+      trialEndDate.setDate(trialEndDate.getDate() + 7);
+      account = new TenantAccount({
+        tenantId: req.params.tenantId,
+        balance: 0,
+        trialEndDate: trialEndDate.toISOString().split('T')[0],
+        status: 'trial'
+      });
+      await account.save();
+    }
+    res.json({ success: true, data: account });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取账单列表
+app.get('/api/bills/:tenantId', async (req, res) => {
+  try {
+    const bills = await MonthlyBill.find({ tenantId: req.params.tenantId }).sort({ month: -1 });
+    res.json({ success: true, data: bills });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取充值记录
+app.get('/api/recharges/:tenantId', async (req, res) => {
+  try {
+    const records = await RechargeRecord.find({ tenantId: req.params.tenantId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: records });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 微信支付 API ==========
+
+// 生成商户订单号
+function generateOutTradeNo() {
+  return 'SJZ' + Date.now() + Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+// 微信支付签名
+function generateWechatSign(method, url, timestamp, nonceStr, body) {
+  const message = `${method}\n${url}\n${timestamp}\n${nonceStr}\n${body}\n`;
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(message);
+  return sign.sign(WECHAT_PAY_CONFIG.privateKey, 'base64');
+}
+
+// 创建充值订单
+app.post('/api/recharge/create', async (req, res) => {
+  try {
+    const { tenantId, tenantName, amount } = req.body;
+    
+    if (!WECHAT_PAY_CONFIG.mchid || !WECHAT_PAY_CONFIG.privateKey) {
+      return res.json({ success: false, error: '微信支付未配置，请联系管理员' });
+    }
+    
+    const outTradeNo = generateOutTradeNo();
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonceStr = crypto.randomBytes(16).toString('hex');
+    
+    // 构建请求体
+    const requestBody = {
+      appid: WECHAT_PAY_CONFIG.appid,
+      mchid: WECHAT_PAY_CONFIG.mchid,
+      description: '三角洲撞车系统-账户充值',
+      out_trade_no: outTradeNo,
+      notify_url: WECHAT_PAY_CONFIG.notifyUrl,
+      amount: {
+        total: Math.round(amount * 100), // 转换为分
+        currency: 'CNY'
+      }
+    };
+    
+    const bodyStr = JSON.stringify(requestBody);
+    const url = '/v3/pay/transactions/native';
+    const signature = generateWechatSign('POST', url, timestamp, nonceStr, bodyStr);
+    
+    // 调用微信支付API
+    const https = require('https');
+    const options = {
+      hostname: 'api.mch.weixin.qq.com',
+      port: 443,
+      path: url,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `WECHATPAY2-SHA256-RSA2048 mchid="${WECHAT_PAY_CONFIG.mchid}",nonce_str="${nonceStr}",timestamp="${timestamp}",serial_no="${WECHAT_PAY_CONFIG.serialNo}",signature="${signature}"`
+      }
+    };
+    
+    const wxReq = https.request(options, (wxRes) => {
+      let data = '';
+      wxRes.on('data', chunk => data += chunk);
+      wxRes.on('end', async () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.code_url) {
+            // 保存订单
+            const order = new RechargeOrder({
+              tenantId,
+              tenantName,
+              amount,
+              outTradeNo,
+              codeUrl: result.code_url,
+              status: 'pending'
+            });
+            await order.save();
+            res.json({ success: true, data: { orderId: order._id, outTradeNo, codeUrl: result.code_url, amount } });
+          } else {
+            console.error('微信支付错误:', result);
+            res.json({ success: false, error: result.message || '创建支付订单失败' });
+          }
+        } catch (e) {
+          res.json({ success: false, error: '解析微信响应失败' });
+        }
+      });
+    });
+    
+    wxReq.on('error', (e) => {
+      console.error('微信支付请求错误:', e);
+      res.json({ success: false, error: '请求微信支付失败' });
+    });
+    
+    wxReq.write(bodyStr);
+    wxReq.end();
+    
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 微信支付回调
+app.post('/api/recharge/notify', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    // 解密回调数据
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { resource } = body;
+    
+    if (!resource) {
+      return res.status(400).json({ code: 'FAIL', message: '无效的回调数据' });
+    }
+    
+    // 解密
+    const { ciphertext, nonce, associated_data } = resource;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(WECHAT_PAY_CONFIG.apiV3Key), Buffer.from(nonce));
+    decipher.setAuthTag(Buffer.from(ciphertext.slice(-16), 'base64'));
+    decipher.setAAD(Buffer.from(associated_data));
+    
+    let decrypted = decipher.update(ciphertext.slice(0, -16), 'base64', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    const paymentResult = JSON.parse(decrypted);
+    const { out_trade_no, transaction_id, trade_state } = paymentResult;
+    
+    if (trade_state === 'SUCCESS') {
+      // 查找订单
+      const order = await RechargeOrder.findOne({ outTradeNo: out_trade_no });
+      if (order && order.status === 'pending') {
+        // 更新订单状态
+        order.status = 'paid';
+        order.paidAt = new Date();
+        order.wxTransactionId = transaction_id;
+        await order.save();
+        
+        // 更新账户余额
+        const account = await TenantAccount.findOne({ tenantId: order.tenantId });
+        if (account) {
+          const balanceBefore = account.balance;
+          account.balance += order.amount;
+          if (account.status === 'suspended') {
+            account.status = 'active';
+          }
+          await account.save();
+          
+          // 创建充值记录
+          const record = new RechargeRecord({
+            tenantId: order.tenantId,
+            tenantName: order.tenantName,
+            orderId: order._id,
+            amount: order.amount,
+            balanceBefore,
+            balanceAfter: account.balance,
+            method: 'wechat'
+          });
+          await record.save();
+        }
+      }
+    }
+    
+    res.json({ code: 'SUCCESS', message: '成功' });
+  } catch (err) {
+    console.error('处理微信回调错误:', err);
+    res.status(500).json({ code: 'FAIL', message: err.message });
+  }
+});
+
+// 查询充值订单状态
+app.get('/api/recharge/query/:orderId', async (req, res) => {
+  try {
+    const order = await RechargeOrder.findById(req.params.orderId);
+    if (!order) return res.json({ success: false, error: '订单不存在' });
+    res.json({ success: true, data: order });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 超级管理员 API ==========
+
+// 超管登录
+app.post('/api/super/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username, role: 'super' });
+    if (!user) return res.json({ success: false, error: '超级管理员不存在' });
+    
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.json({ success: false, error: '密码错误' });
+    
+    res.json({ success: true, user: { id: user._id, username, role: 'super', name: user.name } });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取所有租户
+app.get('/api/super/tenants', async (req, res) => {
+  try {
+    const admins = await User.find({ role: 'admin' });
+    const accounts = await TenantAccount.find();
+    const accountMap = {};
+    accounts.forEach(a => accountMap[a.tenantId] = a);
+    
+    // 获取每个租户的窗口数
+    const windowCounts = {};
+    for (const admin of admins) {
+      const windows = await Data.find({ collection: 'cloudWindows', tenantId: admin.tenantId });
+      windowCounts[admin.tenantId] = windows.length;
+    }
+    
+    const tenants = admins.map(a => ({
+      id: a._id,
+      username: a.username,
+      name: a.name,
+      tenantId: a.tenantId,
+      createdAt: a.createdAt,
+      account: accountMap[a.tenantId] || null,
+      windowCount: windowCounts[a.tenantId] || 0
+    }));
+    
+    res.json({ success: true, data: tenants });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 手动充值
+app.post('/api/super/tenant/:tenantId/charge', async (req, res) => {
+  try {
+    const { amount, note } = req.body;
+    const { tenantId } = req.params;
+    
+    let account = await TenantAccount.findOne({ tenantId });
+    if (!account) {
+      account = new TenantAccount({ tenantId, balance: 0, status: 'trial' });
+    }
+    
+    const balanceBefore = account.balance;
+    account.balance += amount;
+    if (account.status === 'suspended' && account.balance > 0) {
+      account.status = 'active';
+    }
+    await account.save();
+    
+    // 获取租户名称
+    const user = await User.findOne({ tenantId, role: 'admin' });
+    
+    // 创建充值记录
+    const record = new RechargeRecord({
+      tenantId,
+      tenantName: user?.name || '未知',
+      orderId: 'MANUAL-' + Date.now(),
+      amount,
+      balanceBefore,
+      balanceAfter: account.balance,
+      method: 'manual',
+      note
+    });
+    await record.save();
+    
+    res.json({ success: true, data: account });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 暂停账户
+app.post('/api/super/tenant/:tenantId/suspend', async (req, res) => {
+  try {
+    const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    account.status = 'suspended';
+    await account.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 恢复账户
+app.post('/api/super/tenant/:tenantId/activate', async (req, res) => {
+  try {
+    const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    account.status = 'active';
+    await account.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 修改租户费率设置
+app.post('/api/super/tenant/:tenantId/settings', async (req, res) => {
+  try {
+    const { basePrice, freeWindows, pricePerWindow } = req.body;
+    const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    if (basePrice !== undefined) account.basePrice = basePrice;
+    if (freeWindows !== undefined) account.freeWindows = freeWindows;
+    if (pricePerWindow !== undefined) account.pricePerWindow = pricePerWindow;
+    await account.save();
+    
+    res.json({ success: true, data: account });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取所有账单
+app.get('/api/super/bills', async (req, res) => {
+  try {
+    const bills = await MonthlyBill.find().sort({ month: -1, createdAt: -1 });
+    res.json({ success: true, data: bills });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 标记账单已付款
+app.post('/api/super/bill/:billId/pay', async (req, res) => {
+  try {
+    const bill = await MonthlyBill.findById(req.params.billId);
+    if (!bill) return res.json({ success: false, error: '账单不存在' });
+    
+    bill.status = 'paid';
+    bill.paidAt = new Date();
+    await bill.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 超管统计数据
+app.get('/api/super/stats', async (req, res) => {
+  try {
+    const totalTenants = await User.countDocuments({ role: 'admin' });
+    const activeTenants = await TenantAccount.countDocuments({ status: { $in: ['trial', 'active'] } });
+    const totalWindows = await Data.countDocuments({ collection: 'cloudWindows' });
+    
+    const recharges = await RechargeRecord.find();
+    const totalRevenue = recharges.reduce((sum, r) => sum + r.amount, 0);
+    
+    const bills = await MonthlyBill.find({ status: 'paid' });
+    const totalBilled = bills.reduce((sum, b) => sum + b.totalAmount, 0);
+    
+    res.json({
+      success: true,
+      data: {
+        totalTenants,
+        activeTenants,
+        totalWindows,
+        totalRevenue,
+        totalBilled
+      }
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 定时任务 API ==========
+
+// 每日窗口快照
+app.post('/api/cron/daily-snapshot', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const admins = await User.find({ role: 'admin' });
+    
+    for (const admin of admins) {
+      const windows = await Data.find({ collection: 'cloudWindows', tenantId: admin.tenantId });
+      
+      // 检查今天是否已有快照
+      const existing = await DailySnapshot.findOne({ tenantId: admin.tenantId, date: today });
+      if (existing) {
+        existing.windowCount = windows.length;
+        await existing.save();
+      } else {
+        const snapshot = new DailySnapshot({
+          tenantId: admin.tenantId,
+          date: today,
+          windowCount: windows.length
+        });
+        await snapshot.save();
+      }
+    }
+    
+    res.json({ success: true, message: `已为 ${admins.length} 个租户创建快照` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 生成月度账单
+app.post('/api/cron/monthly-bill', async (req, res) => {
+  try {
+    const { month } = req.body; // 格式: "2025-01"，不传则为上个月
+    
+    let targetMonth = month;
+    if (!targetMonth) {
+      const now = new Date();
+      now.setMonth(now.getMonth() - 1);
+      targetMonth = now.toISOString().slice(0, 7);
+    }
+    
+    const admins = await User.find({ role: 'admin' });
+    let billCount = 0;
+    
+    for (const admin of admins) {
+      // 检查是否已有该月账单
+      const existingBill = await MonthlyBill.findOne({ tenantId: admin.tenantId, month: targetMonth });
+      if (existingBill) continue;
+      
+      // 获取账户设置
+      let account = await TenantAccount.findOne({ tenantId: admin.tenantId });
+      if (!account) continue;
+      
+      // 获取该月的窗口快照，计算峰值
+      const snapshots = await DailySnapshot.find({
+        tenantId: admin.tenantId,
+        date: { $regex: `^${targetMonth}` }
+      });
+      
+      const peakWindowCount = snapshots.length > 0 
+        ? Math.max(...snapshots.map(s => s.windowCount))
+        : 0;
+      
+      // 计算费用
+      const extraWindows = Math.max(0, peakWindowCount - account.freeWindows);
+      const extraPrice = extraWindows * account.pricePerWindow;
+      const totalAmount = account.basePrice + extraPrice;
+      
+      // 创建账单
+      const bill = new MonthlyBill({
+        tenantId: admin.tenantId,
+        tenantName: admin.name,
+        month: targetMonth,
+        peakWindowCount,
+        freeWindows: account.freeWindows,
+        extraWindows,
+        basePrice: account.basePrice,
+        extraPrice,
+        totalAmount,
+        status: 'pending'
+      });
+      await bill.save();
+      
+      // 尝试从余额扣款
+      if (account.balance >= totalAmount) {
+        account.balance -= totalAmount;
+        bill.status = 'paid';
+        bill.paidAt = new Date();
+        await bill.save();
+      } else {
+        // 余额不足，标记为逾期
+        bill.status = 'overdue';
+        await bill.save();
+        
+        // 如果不是试用期，暂停账户
+        if (account.status !== 'trial') {
+          account.status = 'suspended';
+        }
+      }
+      await account.save();
+      
+      billCount++;
+    }
+    
+    res.json({ success: true, message: `已生成 ${billCount} 个账单` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 检查试用期
+app.post('/api/cron/check-trial', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const expiredAccounts = await TenantAccount.find({
+      status: 'trial',
+      trialEndDate: { $lt: today }
+    });
+    
+    let count = 0;
+    for (const account of expiredAccounts) {
+      if (account.balance > 0) {
+        account.status = 'active';
+      } else {
+        account.status = 'suspended';
+      }
+      await account.save();
+      count++;
+    }
+    
+    res.json({ success: true, message: `已处理 ${count} 个过期试用账户` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 初始化超级管理员（只能调用一次）
+app.post('/api/init-super-admin', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    const existing = await User.findOne({ role: 'super' });
+    if (existing) return res.json({ success: false, error: '超级管理员已存在' });
+    
+    const hash = await bcrypt.hash(password, 10);
+    const user = new User({
+      username,
+      password: hash,
+      role: 'super',
+      name: '超级管理员'
+    });
+    await user.save();
+    
+    res.json({ success: true, message: '超级管理员创建成功' });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }

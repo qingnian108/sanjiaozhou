@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut, UserPlus, Wallet } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
 import { useAuth } from './hooks/useAuth';
@@ -15,6 +15,8 @@ import { CloudMachines } from './components/CloudMachines';
 import { Login } from './components/Login';
 import { StaffPortal } from './components/StaffPortal';
 import { Friends } from './components/Friends';
+import { Billing } from './components/Billing';
+import { SuperAdmin } from './components/SuperAdmin';
 
 const NAV_ITEMS = [
   { path: '/', label: '总览', icon: LayoutDashboard },
@@ -23,6 +25,7 @@ const NAV_ITEMS = [
   { path: '/staff', label: '员工', icon: Users },
   { path: '/friends', label: '好友', icon: UserPlus },
   { path: '/kook', label: 'Kook', icon: MessageSquare },
+  { path: '/billing', label: '账户', icon: Wallet },
   { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
 
@@ -205,6 +208,7 @@ const AdminApp: React.FC<{
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} purchases={purchases} onRefresh={refreshData} />} />
+            <Route path="/billing" element={<Billing tenantId={tenantId} tenantName={tenantName} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
           </Routes>
         </main>
@@ -277,6 +281,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
 
 const App: React.FC = () => {
   const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, changePassword, isAdmin, getTenantId } = useAuth();
+  const [superAdmin, setSuperAdmin] = useState<any>(null);
 
   const handleLogin = async (username: string, password: string) => {
     await login(username, password);
@@ -284,6 +289,14 @@ const App: React.FC = () => {
 
   const handleRegisterAdmin = async (username: string, password: string, name: string) => {
     await registerAdmin(username, password, name);
+  };
+
+  const handleSuperLogin = (superUser: any) => {
+    setSuperAdmin(superUser);
+  };
+
+  const handleSuperLogout = () => {
+    setSuperAdmin(null);
   };
 
   if (loading) {
@@ -294,9 +307,14 @@ const App: React.FC = () => {
     );
   }
 
+  // 超管已登录
+  if (superAdmin) {
+    return <SuperAdmin onLogout={handleSuperLogout} />;
+  }
+
   // 未登录显示登录页
   if (!user || !staffInfo) {
-    return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} onChangePassword={changePassword} />;
+    return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} onChangePassword={changePassword} onSuperLogin={handleSuperLogin} />;
   }
 
   if (!staffInfo.tenantId) {

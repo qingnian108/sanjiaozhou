@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, UserPlus, Hexagon, ArrowLeft, Key } from 'lucide-react';
+import { LogIn, UserPlus, Hexagon, ArrowLeft, Key, Shield } from 'lucide-react';
 import { CyberInput, CyberButton, useCyberModal } from './CyberUI';
+import { superApi } from '../api';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<void>;
   onRegisterAdmin: (username: string, password: string, name: string) => Promise<void>;
   onChangePassword?: (username: string, oldPassword: string, newPassword: string) => Promise<void>;
+  onSuperLogin?: (superUser: any) => void;
 }
 
-export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassword }) => {
-  const [mode, setMode] = useState<'login' | 'adminRegister' | 'changePassword'>('login');
+export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassword, onSuperLogin }) => {
+  const [mode, setMode] = useState<'login' | 'adminRegister' | 'changePassword' | 'superLogin'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -91,7 +93,18 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
           localStorage.removeItem('savedPassword');
           localStorage.setItem('rememberMe', 'false');
         }
-        await onLogin(username, password);
+        
+        // 检查是否是超管登录
+        if (mode === 'superLogin') {
+          const res = await superApi.login(username, password);
+          if (res.success && onSuperLogin) {
+            onSuperLogin(res.user);
+          } else {
+            throw new Error(res.error || '超管登录失败');
+          }
+        } else {
+          await onLogin(username, password);
+        }
       }
     } catch (err: any) {
       setError(err.message || '操作失败');
@@ -134,7 +147,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
             三角洲<span className="text-cyber-primary">撞车系统</span>
           </h1>
           <p className="text-cyber-primary/60 font-mono text-xs mt-2">
-            {mode === 'adminRegister' ? 'ADMIN REGISTRATION' : mode === 'changePassword' ? 'CHANGE PASSWORD' : 'SYSTEM LOGIN'}
+            {mode === 'adminRegister' ? 'ADMIN REGISTRATION' : mode === 'changePassword' ? 'CHANGE PASSWORD' : mode === 'superLogin' ? 'SUPER ADMIN' : 'SYSTEM LOGIN'}
           </p>
         </div>
 
@@ -166,6 +179,17 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
               value={password}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               placeholder="输入密码"
+              required
+            />
+          )}
+
+          {mode === 'superLogin' && (
+            <CyberInput
+              label="密码"
+              type="password"
+              value={password}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+              placeholder="输入超管密码"
               required
             />
           )}
@@ -221,7 +245,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
           )}
 
           {/* 记住登录信息 */}
-          {mode === 'login' && (
+          {(mode === 'login' || mode === 'superLogin') && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -244,6 +268,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
               <>
                 {mode === 'adminRegister' && <><UserPlus size={16} className="mr-2" />注册管理员</>}
                 {mode === 'changePassword' && <><Key size={16} className="mr-2" />修改密码</>}
+                {mode === 'superLogin' && <><Shield size={16} className="mr-2" />超管登录</>}
                 {mode === 'login' && <><LogIn size={16} className="mr-2" />登录</>}
               </>
             )}
@@ -267,6 +292,14 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
             <p className="text-gray-600 text-xs font-mono">
               员工账号由管理员创建
             </p>
+            {onSuperLogin && (
+              <button
+                onClick={() => { setMode('superLogin'); resetForm(); }}
+                className="text-red-400/50 hover:text-red-400 text-xs font-mono transition-colors block mx-auto mt-4"
+              >
+                <Shield size={12} className="inline mr-1" /> 超级管理员入口
+              </button>
+            )}
           </div>
         )}
       </div>
