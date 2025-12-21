@@ -266,10 +266,34 @@ export const CloudMachines: React.FC<Props> = ({
     'text-orange-400', 'text-blue-400', 'text-red-400', 'text-teal-400'
   ];
   
+  // 员工背景色列表（与文字颜色对应）
+  const staffBgColors = [
+    'bg-cyan-500/10', 'bg-pink-500/10', 'bg-green-500/10', 'bg-purple-500/10',
+    'bg-orange-500/10', 'bg-blue-500/10', 'bg-red-500/10', 'bg-teal-500/10'
+  ];
+  
+  // 员工边框色列表（与文字颜色对应）
+  const staffBorderColors = [
+    'border-cyan-500/50', 'border-pink-500/50', 'border-green-500/50', 'border-purple-500/50',
+    'border-orange-500/50', 'border-blue-500/50', 'border-red-500/50', 'border-teal-500/50'
+  ];
+  
   const getStaffColor = (staffId: string | null) => {
     if (!staffId) return 'text-gray-400';
     const index = staffList.findIndex(s => s.id === staffId);
     return staffColors[index % staffColors.length];
+  };
+  
+  const getStaffBgColor = (staffId: string | null) => {
+    if (!staffId) return 'bg-green-500/10';
+    const index = staffList.findIndex(s => s.id === staffId);
+    return staffBgColors[index % staffBgColors.length];
+  };
+  
+  const getStaffBorderColor = (staffId: string | null) => {
+    if (!staffId) return 'border-green-500/50';
+    const index = staffList.findIndex(s => s.id === staffId);
+    return staffBorderColors[index % staffBorderColors.length];
   };
 
   const getMachineWindows = (machineId: string) => windows.filter(w => w.machineId === machineId);
@@ -517,10 +541,10 @@ export const CloudMachines: React.FC<Props> = ({
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {machineWindows.map(window => (
-                              <div key={window.id} className={`p-4 rounded border ${window.userId ? 'border-yellow-500/50 bg-yellow-500/10' : 'border-green-500/50 bg-green-500/10'}`}>
+                              <div key={window.id} className={`p-4 rounded border ${getStaffBorderColor(window.userId)} ${getStaffBgColor(window.userId)}`}>
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
-                                    <Circle size={10} className={window.userId ? 'text-yellow-400 fill-yellow-400' : 'text-green-400 fill-green-400'} />
+                                    <Circle size={10} className={window.userId ? `${getStaffColor(window.userId)} fill-current` : 'text-green-400 fill-green-400'} />
                                     <span className="font-mono text-lg">#{window.windowNumber}</span>
                                   </div>
                                   <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={16} /></button>
