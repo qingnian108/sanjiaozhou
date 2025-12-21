@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, FileText, BarChart3, RefreshCw, DollarSign, Settings, Play, Pause, LogOut, X, Calendar } from 'lucide-react';
+import { Users, FileText, BarChart3, RefreshCw, DollarSign, Settings, Play, Pause, LogOut, X, Calendar, ExternalLink, Edit2 } from 'lucide-react';
 import { superApi, cronApi } from '../api';
 
 interface Tenant {
@@ -16,7 +16,14 @@ interface Tenant {
     pricePerWindow: number;
     trialEndDate: string;
     status: 'trial' | 'active' | 'suspended';
+    commissionRate?: number;
   } | null;
+  profit: {
+    totalRevenue: number;
+    totalProfit: number;
+    todayRevenue: number;
+    todayProfit: number;
+  };
 }
 
 interface Bill {
@@ -45,9 +52,10 @@ interface Stats {
 
 interface SuperAdminProps {
   onLogout: () => void;
+  onLoginAsTenant?: (tenantId: string, username: string) => void;
 }
 
-export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
+export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout, onLoginAsTenant }) => {
   const [activeTab, setActiveTab] = useState<'tenants' | 'bills' | 'stats'>('tenants');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -60,7 +68,14 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
   const [chargeNote, setChargeNote] = useState('');
   
   const [settingsModal, setSettingsModal] = useState<{ open: boolean; tenant: Tenant | null }>({ open: false, tenant: null });
-  const [settingsForm, setSettingsForm] = useState({ basePrice: 50, freeWindows: 5, pricePerWindow: 10 });
+  const [settingsForm, setSettingsForm] = useState({ 
+    basePrice: 50, 
+    freeWindows: 5, 
+    pricePerWindow: 10,
+    trialEndDate: '',
+    status: 'active' as 'trial' | 'active' | 'suspended',
+    commissionRate: 0.1
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -301,6 +316,8 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
                 <th className="p-4">状态</th>
                 <th className="p-4">余额</th>
                 <th className="p-4">窗口数</th>
+                <th className="p-4">今日利润</th>
+                <th className="p-4">总利润</th>
                 <th className="p-4">费率</th>
                 <th className="p-4">注册时间</th>
                 <th className="p-4">操作</th>
@@ -314,8 +331,25 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
                   <td className="p-4">{getStatusBadge(tenant.account?.status)}</td>
                   <td className="p-4 font-mono text-cyber-accent">¥{tenant.account?.balance?.toFixed(2) || '0.00'}</td>
                   <td className="p-4">{tenant.windowCount} 个</td>
+                  <td className="p-4">
+                    <div className={`font-mono ${tenant.profit?.todayProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {tenant.profit?.todayProfit >= 0 ? '+' : ''}¥{tenant.profit?.todayProfit?.toFixed(2) || '0.00'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      收入 ¥{tenant.profit?.todayRevenue?.toFixed(2) || '0.00'}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className={`font-mono ${tenant.profit?.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {tenant.profit?.totalProfit >= 0 ? '+' : ''}¥{tenant.profit?.totalProfit?.toFixed(2) || '0.00'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      收入 ¥{tenant.profit?.totalRevenue?.toFixed(2) || '0.00'}
+                    </div>
+                  </td>
                   <td className="p-4 text-sm text-gray-400">
                     ¥{tenant.account?.basePrice || 50} + ¥{tenant.account?.pricePerWindow || 10}/窗口
+                    <span className="ml-2 text-cyber-accent">({((tenant.account?.commissionRate ?? 0.1) * 100).toFixed(0)}%返佣)</span>
                   </td>
                   <td className="p-4 text-sm">{new Date(tenant.createdAt).toLocaleDateString()}</td>
                   <td className="p-4">
@@ -336,13 +370,24 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
                           setSettingsForm({
                             basePrice: tenant.account?.basePrice || 50,
                             freeWindows: tenant.account?.freeWindows || 5,
-                            pricePerWindow: tenant.account?.pricePerWindow || 10
+                            pricePerWindow: tenant.account?.pricePerWindow || 10,
+                            trialEndDate: tenant.account?.trialEndDate || '',
+                            status: tenant.account?.status || 'active',
+                            commissionRate: tenant.account?.commissionRate ?? 0.1
                           });
                         }}
                         className="px-2 py-1 text-xs border border-cyber-primary/50 text-cyber-primary hover:bg-cyber-primary/20"
                       >
-                        费率
+                        <Edit2 size={12} className="inline mr-1" />设置
                       </button>
+                      {onLoginAsTenant && (
+                        <button
+                          onClick={() => onLoginAsTenant(tenant.tenantId, tenant.username)}
+                          className="px-2 py-1 text-xs border border-purple-500/50 text-purple-400 hover:bg-purple-500/20"
+                        >
+                          <ExternalLink size={12} className="inline mr-1" />进入
+                        </button>
+                      )}
                       <button
                         onClick={() => handleToggleStatus(tenant)}
                         className={`px-2 py-1 text-xs border ${
@@ -457,10 +502,31 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
             <button onClick={() => setSettingsModal({ open: false, tenant: null })} className="absolute top-4 right-4 text-gray-400 hover:text-white">
               <X size={20} />
             </button>
-            <h3 className="text-xl font-mono text-cyber-primary mb-4">费率设置</h3>
-            <p className="text-gray-400 mb-4">设置 <span className="text-white">{settingsModal.tenant.name}</span> 的费率</p>
+            <h3 className="text-xl font-mono text-cyber-primary mb-4">账户设置</h3>
+            <p className="text-gray-400 mb-4">设置 <span className="text-white">{settingsModal.tenant.name}</span> ({settingsModal.tenant.username})</p>
             
             <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">账户状态</label>
+                <select
+                  value={settingsForm.status}
+                  onChange={e => setSettingsForm({ ...settingsForm, status: e.target.value as any })}
+                  className="w-full bg-cyber-bg border border-cyber-primary/50 p-3 text-white"
+                >
+                  <option value="trial">试用中</option>
+                  <option value="active">正常</option>
+                  <option value="suspended">暂停</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">试用截止日期</label>
+                <input
+                  type="date"
+                  value={settingsForm.trialEndDate}
+                  onChange={e => setSettingsForm({ ...settingsForm, trialEndDate: e.target.value })}
+                  className="w-full bg-cyber-bg border border-cyber-primary/50 p-3 text-white"
+                />
+              </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-2">基础月费 (元)</label>
                 <input
@@ -487,6 +553,19 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onLogout }) => {
                   onChange={e => setSettingsForm({ ...settingsForm, pricePerWindow: Number(e.target.value) })}
                   className="w-full bg-cyber-bg border border-cyber-primary/50 p-3 text-white"
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">返佣比例 (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={Math.round(settingsForm.commissionRate * 100)}
+                  onChange={e => setSettingsForm({ ...settingsForm, commissionRate: Number(e.target.value) / 100 })}
+                  className="w-full bg-cyber-bg border border-cyber-primary/50 p-3 text-white"
+                />
+                <p className="text-xs text-gray-500 mt-1">被邀请用户充值时，该用户获得的返佣比例</p>
               </div>
             </div>
             

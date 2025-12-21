@@ -607,10 +607,6 @@ export const StaffPortal: React.FC<Props> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {myWindows.map(window => {
-                // 查找该窗口关联的进行中订单
-                const windowOrder = pendingOrders.find(o => 
-                  o.windowSnapshots?.some(s => s.windowId === window.id)
-                );
                 return (
                   <div key={window.id} className="p-3 bg-black/30 rounded border border-cyber-primary/20 group">
                     <div className="flex justify-between items-center">
@@ -636,45 +632,6 @@ export const StaffPortal: React.FC<Props> = ({
                       <div className="mt-2 pt-2 border-t border-gray-700/50 text-xs">
                         <span className="text-gray-500">登录方式: </span>
                         <span className="text-cyber-primary">{getMachineLoginInfo(window.machineId)}</span>
-                      </div>
-                    )}
-                    {/* 显示该窗口关联的进行中订单 */}
-                    {windowOrder && (
-                      <div className="mt-3 pt-3 border-t border-yellow-500/30 bg-yellow-500/5 -mx-3 -mb-3 px-3 pb-3 rounded-b">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="text-xs text-yellow-400 font-mono flex items-center gap-1">
-                              <Clock size={12} /> 进行中订单
-                            </div>
-                            <div className="text-sm text-gray-300">
-                              {windowOrder.date} · <span className="text-cyber-accent">{windowOrder.amount}</span> 万
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {onDeleteOrder && (
-                              <button
-                                onClick={() => setDeleteOrderId(windowOrder.id)}
-                                className="px-2 py-1 text-xs bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 rounded flex items-center gap-1"
-                              >
-                                <Trash2 size={10} /> 删除
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                setActiveOrderId(windowOrder.id);
-                                // 初始化窗口余额为员工当前窗口
-                                const balances: Record<string, string> = {};
-                                myWindows.forEach(w => {
-                                  balances[w.id] = '';
-                                });
-                                setWindowBalances(balances);
-                              }}
-                              className="px-2 py-1 text-xs bg-green-500/20 border border-green-500/50 text-green-400 hover:bg-green-500/30 rounded flex items-center gap-1"
-                            >
-                              <CheckCircle size={10} /> 完成
-                            </button>
-                          </div>
-                        </div>
                       </div>
                     )}
                   </div>

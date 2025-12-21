@@ -29,15 +29,25 @@ const NAV_ITEMS = [
   { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
 
-const Navigation = ({ onLogout }: { onLogout: () => void }) => {
+// 客服导航项（隐藏敏感页面）
+const DISPATCHER_NAV_ITEMS = [
+  { path: '/', label: '总览', icon: LayoutDashboard },
+  { path: '/dispatch', label: '派单', icon: Send, glow: true },
+  { path: '/cloud', label: '云机', icon: Monitor },
+  { path: '/staff', label: '员工', icon: Users },
+  { path: '/kook', label: 'Kook', icon: MessageSquare },
+];
+
+const Navigation = ({ onLogout, isDispatcher = false }: { onLogout: () => void; isDispatcher?: boolean }) => {
   const location = useLocation();
+  const navItems = isDispatcher ? DISPATCHER_NAV_ITEMS : NAV_ITEMS;
   
   return (
     <nav className="fixed bottom-0 left-0 w-full md:w-32 md:h-screen md:top-0 bg-cyber-panel border-t md:border-t-0 md:border-r border-cyber-primary/20 z-50 flex md:flex-col justify-around md:justify-start py-2 md:py-6 backdrop-blur-md">
       <div className="hidden md:flex justify-center mb-8">
         <Hexagon className="text-cyber-primary animate-pulse-slow drop-shadow-[0_0_8px_rgba(0,243,255,0.8)]" size={48} />
       </div>
-      {NAV_ITEMS.map(item => {
+      {navItems.map(item => {
         const isActive = location.pathname === item.path;
         const Icon = item.icon;
         const hasGlow = (item as any).glow;
@@ -72,10 +82,12 @@ const Navigation = ({ onLogout }: { onLogout: () => void }) => {
 const AdminApp: React.FC<{ 
   tenantId: string;
   tenantName: string;
+  username: string;
   onLogout: () => void; 
   onCreateStaff: (username: string, password: string, name: string) => Promise<void>;
   onSuperLogin?: (superUser: any) => void;
-}> = ({ tenantId, tenantName, onLogout, onCreateStaff, onSuperLogin }) => {
+  onLoginAsStaff?: (staffId: string, staffName: string) => void;
+}> = ({ tenantId, tenantName, username, onLogout, onCreateStaff, onSuperLogin, onLoginAsStaff }) => {
   const {
     purchases,
     orders,
@@ -99,10 +111,12 @@ const AdminApp: React.FC<{
     addCloudMachine,
     batchPurchase,
     deleteCloudMachine,
+    updateCloudMachine,
     addCloudWindow,
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
+    updateWindowNumber,
     resumeOrder,
     processWindowRequest,
     rechargeWindow,
@@ -205,12 +219,12 @@ const AdminApp: React.FC<{
           <Routes>
             <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
-            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} />} />
+            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
-            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
+            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} purchases={purchases} onRefresh={refreshData} />} />
-            <Route path="/billing" element={<Billing tenantId={tenantId} tenantName={tenantName} />} />
-            <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} tenantId={tenantId} onSuperLogin={onSuperLogin} />} />
+            <Route path="/billing" element={<Billing tenantId={tenantId} tenantName={tenantName} username={username} />} />
+            <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} tenantId={tenantId} username={username} onSuperLogin={onSuperLogin} />} />
           </Routes>
         </main>
 
@@ -280,9 +294,162 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
   );
 };
 
+// 客服视图 - 基于管理端但隐藏敏感数据
+const DispatcherApp: React.FC<{ 
+  tenantId: string;
+  tenantName: string;
+  username: string;
+  onLogout: () => void;
+}> = ({ tenantId, tenantName, username, onLogout }) => {
+  const {
+    orders,
+    staffList,
+    settings,
+    kookChannels,
+    cloudMachines,
+    cloudWindows,
+    windowRequests,
+    loading,
+    addOrder,
+    deleteOrder,
+    addKookChannel,
+    deleteKookChannel,
+    updateKookChannel,
+    addCloudMachine,
+    batchPurchase,
+    deleteCloudMachine,
+    updateCloudMachine,
+    addCloudWindow,
+    deleteCloudWindow,
+    assignWindow,
+    updateWindowGold,
+    updateWindowNumber,
+    resumeOrder,
+    processWindowRequest,
+    completeOrder,
+    releaseOrderWindow,
+    addWindowToOrder
+  } = useFirestore(tenantId);
+
+  // 确认弹窗状态
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  const showConfirmModal = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModal({ isOpen: true, title, message, onConfirm });
+  };
+
+  const handleDeleteOrder = async (id: string) => {
+    await deleteOrder(id);
+  };
+
+  const handleDeleteKookChannel = async (id: string) => {
+    showConfirmModal('确认删除', '确认删除该Kook频道？', async () => {
+      await deleteKookChannel(id);
+    });
+  };
+
+  const handleDeleteCloudWindow = async (id: string) => {
+    showConfirmModal('确认删除', '确认删除该窗口？', async () => {
+      await deleteCloudWindow(id);
+    });
+  };
+
+  const handleDeleteCloudMachine = async (id: string) => {
+    showConfirmModal('确认删除', '确认删除该云机及其所有窗口？', async () => {
+      await deleteCloudMachine(id);
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-cyber-bg h-screen w-screen flex items-center justify-center text-cyber-primary font-mono tracking-widest animate-pulse">
+        LOADING DATA...
+      </div>
+    );
+  }
+
+  // 客服看到的统计数据（隐藏金额）
+  const dispatcherStats = {
+    globalStats: {
+      totalOrders: orders.filter(o => o.status === 'completed').length,
+      totalAmount: 0, // 隐藏
+      totalPurchase: 0, // 隐藏
+      totalProfit: 0, // 隐藏
+      avgCostPerGold: 0, // 隐藏
+      totalGoldPurchased: 0, // 隐藏
+      totalGoldConsumed: orders.reduce((sum, o) => sum + (o.totalConsumed || 0), 0),
+    },
+    dailyStats: []
+  };
+
+  return (
+    <HashRouter>
+      <div className="min-h-screen bg-cyber-bg text-cyber-text font-sans pb-24 md:pb-0 md:pl-32 relative overflow-hidden bg-cyber-grid bg-[length:30px_30px]">
+        <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyber-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyber-secondary/5 rounded-full blur-[120px] pointer-events-none"></div>
+
+        <Navigation onLogout={onLogout} isDispatcher={true} />
+
+        <main className="relative z-10 max-w-7xl mx-auto p-4 md:p-10">
+          <header className="mb-8 flex justify-between items-end border-b border-cyber-primary/30 pb-4">
+            <div>
+              <h1 className="text-3xl md:text-5xl font-bold uppercase tracking-tighter font-mono text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">
+                三角洲<span className="text-cyber-primary drop-shadow-[0_0_8px_#00f3ff]">撞车系统</span>
+              </h1>
+              <p className="text-cyber-accent/60 font-mono text-xs tracking-[0.4em] mt-2 ml-1">
+                DISPATCHER PANEL // {username}
+              </p>
+            </div>
+            <div className="hidden md:flex items-center gap-4 text-right">
+              <div>
+                <div className="text-xs text-gray-500 font-mono mb-1">SYSTEM TIME</div>
+                <div className="text-cyber-accent font-mono text-lg">{new Date().toLocaleDateString()}</div>
+              </div>
+            </div>
+          </header>
+
+          <Routes>
+            <Route path="/" element={<Dashboard globalStats={dispatcherStats.globalStats} dailyStats={dispatcherStats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={[]} settings={settings} onDeleteOrder={handleDeleteOrder} isDispatcher={true} />} />
+            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={async () => {}} onDeleteStaff={() => {}} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} isDispatcher={true} />} />
+            <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
+            <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={[]} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={async () => {}} onDeletePurchase={async () => {}} onUpdatePurchase={async () => {}} onProcessRequest={processWindowRequest} onRechargeWindow={async () => {}} isDispatcher={true} />} />
+          </Routes>
+        </main>
+
+        {/* 确认弹窗 */}
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-cyber-panel border border-red-500 p-6 max-w-md w-full relative">
+              <div className="absolute top-0 left-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+              <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-red-500 shadow-lg"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 border border-red-500 flex items-center justify-center text-red-400 font-mono text-lg">!</div>
+                <h3 className="text-xl font-mono text-red-400 tracking-wider">{confirmModal.title}</h3>
+              </div>
+              <p className="text-gray-300 mb-6 font-mono text-sm leading-relaxed">{confirmModal.message}</p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+                <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({ ...confirmModal, isOpen: false }); }} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </HashRouter>
+  );
+};
+
 const App: React.FC = () => {
-  const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, changePassword, isAdmin, getTenantId } = useAuth();
+  const { user, staffInfo, loading, login, registerAdmin, logout, createStaffAccount, changePassword, isAdmin, isDispatcher, getTenantId } = useAuth();
   const [superAdmin, setSuperAdmin] = useState<any>(null);
+  const [impersonatedTenant, setImpersonatedTenant] = useState<{ tenantId: string; username: string } | null>(null);
+  const [impersonatedStaff, setImpersonatedStaff] = useState<{ staffId: string; staffName: string } | null>(null);
 
   const handleLogin = async (username: string, password: string) => {
     await login(username, password);
@@ -298,6 +465,23 @@ const App: React.FC = () => {
 
   const handleSuperLogout = () => {
     setSuperAdmin(null);
+    setImpersonatedTenant(null);
+  };
+
+  const handleLoginAsTenant = (tenantId: string, username: string) => {
+    setImpersonatedTenant({ tenantId, username });
+  };
+
+  const handleBackToSuperAdmin = () => {
+    setImpersonatedTenant(null);
+  };
+
+  const handleLoginAsStaff = (staffId: string, staffName: string) => {
+    setImpersonatedStaff({ staffId, staffName });
+  };
+
+  const handleBackFromStaff = () => {
+    setImpersonatedStaff(null);
   };
 
   if (loading) {
@@ -310,7 +494,35 @@ const App: React.FC = () => {
 
   // 超管已登录
   if (superAdmin) {
-    return <SuperAdmin onLogout={handleSuperLogout} />;
+    // 如果正在模拟租户
+    if (impersonatedTenant) {
+      return (
+        <div>
+          {/* 超管顶部提示条 */}
+          <div className="fixed top-0 left-0 right-0 bg-purple-600 text-white py-2 px-4 flex justify-between items-center z-[100]">
+            <span className="font-mono text-sm">
+              🔐 超管模式 - 正在查看: <strong>{impersonatedTenant.username}</strong>
+            </span>
+            <button
+              onClick={handleBackToSuperAdmin}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm"
+            >
+              返回超管后台
+            </button>
+          </div>
+          <div className="pt-10">
+            <AdminApp 
+              tenantId={impersonatedTenant.tenantId} 
+              tenantName={impersonatedTenant.username} 
+              username={impersonatedTenant.username}
+              onLogout={handleBackToSuperAdmin} 
+              onCreateStaff={async () => {}} 
+            />
+          </div>
+        </div>
+      );
+    }
+    return <SuperAdmin onLogout={handleSuperLogout} onLoginAsTenant={handleLoginAsTenant} />;
   }
 
   // 未登录显示登录页
@@ -328,7 +540,40 @@ const App: React.FC = () => {
 
   // 管理员显示管理端
   if (isAdmin) {
-    return <AdminApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} onLogout={logout} onCreateStaff={createStaffAccount} onSuperLogin={handleSuperLogin} />;
+    // 如果正在以员工身份查看
+    if (impersonatedStaff) {
+      const fakeStaffInfo = {
+        id: impersonatedStaff.staffId,
+        name: impersonatedStaff.staffName,
+        role: 'staff',
+        tenantId: staffInfo.tenantId
+      };
+      return (
+        <div>
+          {/* 顶部提示条 */}
+          <div className="fixed top-0 left-0 right-0 bg-purple-600 text-white py-2 px-4 flex justify-between items-center z-[100]">
+            <span className="font-mono text-sm">
+              👁️ 员工视角 - 正在查看: <strong>{impersonatedStaff.staffName}</strong>
+            </span>
+            <button
+              onClick={handleBackFromStaff}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm"
+            >
+              返回管理后台
+            </button>
+          </div>
+          <div className="pt-10">
+            <StaffApp staffInfo={fakeStaffInfo} tenantId={staffInfo.tenantId} onLogout={handleBackFromStaff} />
+          </div>
+        </div>
+      );
+    }
+    return <AdminApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} username={staffInfo.username} onLogout={logout} onCreateStaff={createStaffAccount} onSuperLogin={handleSuperLogin} onLoginAsStaff={handleLoginAsStaff} />;
+  }
+
+  // 客服显示客服端
+  if (isDispatcher) {
+    return <DispatcherApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} username={staffInfo.username} onLogout={logout} />;
   }
 
   // 员工显示员工端

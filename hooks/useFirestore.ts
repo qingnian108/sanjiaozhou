@@ -293,6 +293,14 @@ export function useFirestore(tenantId: string | null) {
     }
   };
 
+  const updateWindowNumber = async (windowId: string, windowNumber: string) => {
+    const window = cloudWindows.find(w => w.id === windowId);
+    if (window) {
+      await dataApi.update('cloudWindows', windowId, { ...window, windowNumber });
+      await loadData();
+    }
+  };
+
   // 窗口申请
   const createWindowRequest = async (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => {
     if (!tenantId) return;
@@ -459,6 +467,7 @@ export function useFirestore(tenantId: string | null) {
     deleteCloudWindow,
     assignWindow,
     updateWindowGold,
+    updateWindowNumber,
     pauseOrder,
     resumeOrder,
     createWindowRequest,

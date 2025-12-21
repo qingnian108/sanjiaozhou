@@ -19,15 +19,18 @@ interface Props {
   onAddMachine: (machine: Omit<CloudMachine, 'id'>) => Promise<string>;
   onBatchPurchase: (machine: Omit<CloudMachine, 'id'>, windows: { windowNumber: string; goldBalance: number }[], purchase?: Omit<PurchaseRecord, 'id'>) => Promise<string>;
   onDeleteMachine: (id: string) => void;
+  onUpdateMachine: (id: string, data: Partial<CloudMachine>) => void;
   onAddWindow: (window: Omit<CloudWindow, 'id'>) => void;
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onUpdateWindowGold: (windowId: string, goldBalance: number) => void;
+  onUpdateWindowNumber: (windowId: string, windowNumber: string) => void;
   onAddPurchase: (record: Omit<PurchaseRecord, 'id'>) => void;
   onDeletePurchase: (id: string) => void;
   onUpdatePurchase: (id: string, data: Partial<PurchaseRecord>) => void;
   onProcessRequest: (requestId: string, approved: boolean, adminId: string) => void;
   onRechargeWindow: (windowId: string, amount: number, operatorId: string, cost?: number) => void;
+  isDispatcher?: boolean;
 }
 
 export const CloudMachines: React.FC<Props> = ({
@@ -40,15 +43,18 @@ export const CloudMachines: React.FC<Props> = ({
   onAddMachine,
   onBatchPurchase,
   onDeleteMachine,
+  onUpdateMachine,
   onAddWindow,
   onDeleteWindow,
   onAssignWindow,
   onUpdateWindowGold,
+  onUpdateWindowNumber,
   onAddPurchase,
   onDeletePurchase,
   onUpdatePurchase,
   onProcessRequest,
-  onRechargeWindow
+  onRechargeWindow,
+  isDispatcher = false
 }) => {
   const [activeTab, setActiveTab] = useState<'machines' | 'purchase' | 'requests' | 'records'>('machines');
   const [rechargeWindowId, setRechargeWindowId] = useState<string | null>(null);
@@ -58,6 +64,13 @@ export const CloudMachines: React.FC<Props> = ({
   const [editForm, setEditForm] = useState({ date: '', amount: '', cost: '' });
   const [transferWindowId, setTransferWindowId] = useState<string | null>(null);
   const [transferTargetStaffId, setTransferTargetStaffId] = useState('');
+  const [editingWindowId, setEditingWindowId] = useState<string | null>(null);
+  const [editWindowNumber, setEditWindowNumber] = useState('');
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
+  const [editMachinePhone, setEditMachinePhone] = useState('');
+  const [editMachinePlatform, setEditMachinePlatform] = useState('');
+  const [editMachineLoginType, setEditMachineLoginType] = useState<'password' | 'code'>('code');
+  const [editMachineLoginPassword, setEditMachineLoginPassword] = useState('');
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   // 待审批的申请
@@ -324,11 +337,13 @@ export const CloudMachines: React.FC<Props> = ({
             </span>
           )}
         </button>
-        <button onClick={() => setActiveTab('records')}
-          className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
-            ${activeTab === 'records' ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
-          <FileText size={20} /> 采购记录
-        </button>
+        {!isDispatcher && (
+          <button onClick={() => setActiveTab('records')}
+            className={`flex-1 p-4 border-b-2 transition-all font-mono uppercase font-bold tracking-widest flex items-center justify-center gap-3
+              ${activeTab === 'records' ? 'bg-green-500/10 border-green-500 text-green-400' : 'bg-black/30 border-gray-800 text-gray-600 hover:text-gray-400'}`}>
+            <FileText size={20} /> 采购记录
+          </button>
+        )}
       </div>
 
       {/* 云机采购 */}
@@ -444,11 +459,13 @@ export const CloudMachines: React.FC<Props> = ({
                 const totalGold = getMachineTotalGold(machine.id);
                 const occupiedCount = machineWindows.filter(w => w.userId).length;
                 const isExpanded = !collapsedMachines.has(machine.id);
+                const isEditing = editingMachineId === machine.id;
 
                 return (
                   <div key={machine.id} className="border border-cyber-primary/20 rounded overflow-hidden">
                     <div className="flex justify-between items-center p-4 bg-cyber-panel/50 cursor-pointer hover:bg-cyber-panel/80"
                       onClick={() => {
+                        if (isEditing) return;
                         const newSet = new Set(collapsedMachines);
                         if (isExpanded) newSet.add(machine.id);
                         else newSet.delete(machine.id);
@@ -456,15 +473,53 @@ export const CloudMachines: React.FC<Props> = ({
                       }}>
                       <div className="flex items-center gap-4">
                         <Server className="text-cyber-primary" size={28} />
-                        <div>
-                          <div className="font-mono text-xl">{machine.phone}</div>
-                          <div className="flex items-center gap-2 text-base text-gray-400">
-                            <span>{machine.platform}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded ${machine.loginType === 'password' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
-                              {machine.loginType === 'password' ? `密码: ${machine.loginPassword || ''}` : '验证码'}
-                            </span>
+                        {isEditing ? (
+                          <div className="space-y-2" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editMachinePhone}
+                              onChange={e => setEditMachinePhone(e.target.value)}
+                              placeholder="手机号"
+                              className="bg-black/40 border border-cyber-primary/50 text-cyber-text font-mono px-2 py-1 text-lg w-40"
+                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editMachinePlatform}
+                                onChange={e => setEditMachinePlatform(e.target.value)}
+                                placeholder="平台"
+                                className="bg-black/40 border border-cyber-primary/50 text-cyber-text font-mono px-2 py-1 text-sm w-24"
+                              />
+                              <select
+                                value={editMachineLoginType}
+                                onChange={e => setEditMachineLoginType(e.target.value as 'password' | 'code')}
+                                className="bg-black/40 border border-cyber-primary/50 text-cyber-text font-mono px-2 py-1 text-sm"
+                              >
+                                <option value="code">验证码</option>
+                                <option value="password">密码</option>
+                              </select>
+                              {editMachineLoginType === 'password' && (
+                                <input
+                                  type="text"
+                                  value={editMachineLoginPassword}
+                                  onChange={e => setEditMachineLoginPassword(e.target.value)}
+                                  placeholder="密码"
+                                  className="bg-black/40 border border-cyber-primary/50 text-cyber-text font-mono px-2 py-1 text-sm w-24"
+                                />
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div>
+                            <div className="font-mono text-xl">{machine.phone}</div>
+                            <div className="flex items-center gap-2 text-base text-gray-400">
+                              <span>{machine.platform}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${machine.loginType === 'password' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
+                                {machine.loginType === 'password' ? `密码: ${machine.loginPassword || ''}` : '验证码'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="text-right">
@@ -477,6 +532,36 @@ export const CloudMachines: React.FC<Props> = ({
                           <span className="text-yellow-400 text-lg">{occupiedCount}</span>
                           <div className="text-sm text-gray-500">空闲/占用</div>
                         </div>
+                        {isEditing ? (
+                          <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => {
+                              onUpdateMachine(machine.id, {
+                                phone: editMachinePhone,
+                                platform: editMachinePlatform,
+                                loginType: editMachineLoginType,
+                                loginPassword: editMachineLoginType === 'password' ? editMachineLoginPassword : undefined
+                              });
+                              setEditingMachineId(null);
+                              showSuccess('修改成功', '云机信息已更新');
+                            }} className="text-green-400 hover:text-green-300 p-2">
+                              <Save size={18} />
+                            </button>
+                            <button onClick={() => setEditingMachineId(null)} className="text-gray-400 hover:text-white p-2">
+                              <X size={18} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMachineId(machine.id);
+                            setEditMachinePhone(machine.phone);
+                            setEditMachinePlatform(machine.platform);
+                            setEditMachineLoginType(machine.loginType || 'code');
+                            setEditMachineLoginPassword(machine.loginPassword || '');
+                          }} className="text-cyber-primary/60 hover:text-cyber-primary p-2">
+                            <Edit2 size={18} />
+                          </button>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); onDeleteMachine(machine.id); }} className="text-red-500 hover:text-red-400 p-1">
                           <Trash2 size={18} />
                         </button>
@@ -545,9 +630,29 @@ export const CloudMachines: React.FC<Props> = ({
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
                                     <Circle size={10} className={window.userId ? `${getStaffColor(window.userId)} fill-current` : 'text-green-400 fill-green-400'} />
-                                    <span className="font-mono text-lg">#{window.windowNumber}</span>
+                                    {editingWindowId === window.id ? (
+                                      <input
+                                        type="text"
+                                        value={editWindowNumber}
+                                        onChange={e => setEditWindowNumber(e.target.value)}
+                                        className="bg-black/40 border border-cyber-primary/50 text-cyber-text font-mono px-2 py-1 text-lg w-24"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span className="font-mono text-lg">#{window.windowNumber}</span>
+                                    )}
                                   </div>
-                                  <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400"><Trash2 size={16} /></button>
+                                  <div className="flex items-center gap-1">
+                                    {editingWindowId === window.id ? (
+                                      <>
+                                        <button onClick={() => { onUpdateWindowNumber(window.id, editWindowNumber); setEditingWindowId(null); showSuccess('修改成功', '窗口号已更新'); }} className="text-green-400 hover:text-green-300 p-1"><Save size={14} /></button>
+                                        <button onClick={() => setEditingWindowId(null)} className="text-gray-400 hover:text-white p-1"><X size={14} /></button>
+                                      </>
+                                    ) : (
+                                      <button onClick={() => { setEditingWindowId(window.id); setEditWindowNumber(window.windowNumber); }} className="text-cyber-primary/60 hover:text-cyber-primary p-1"><Edit2 size={14} /></button>
+                                    )}
+                                    <button onClick={() => onDeleteWindow(window.id)} className="text-red-500/60 hover:text-red-400 p-1"><Trash2 size={14} /></button>
+                                  </div>
                                 </div>
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
@@ -651,8 +756,8 @@ export const CloudMachines: React.FC<Props> = ({
         </CyberCard>
       )}
 
-      {/* 采购记录 */}
-      {activeTab === 'records' && (
+      {/* 采购记录 - 客服隐藏 */}
+      {activeTab === 'records' && !isDispatcher && (
         <CyberCard title="采购记录" icon={<FileText size={20} />}>
           {purchases.length === 0 ? (
             <div className="text-center py-8 text-gray-500">暂无采购记录</div>

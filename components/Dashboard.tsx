@@ -13,9 +13,10 @@ interface DashboardProps {
   purchases: PurchaseRecord[];
   settings: Settings;
   onDeleteOrder: (id: string) => void;
+  isDispatcher?: boolean;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, cloudWindows, purchases, settings, onDeleteOrder }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, cloudWindows, purchases, settings, onDeleteOrder, isDispatcher = false }) => {
   const today = new Date().toISOString().split('T')[0];
   
   // 计算实际库存（所有窗口余额总和）
@@ -161,24 +162,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     <div className="space-y-6 animate-fade-in">
       <SectionHeader title="指挥中心 // 资产总览" icon={Activity} />
       
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatBox 
-          label="历史累计利润" 
-          value={formatCurrency(totalProfit)}
-          subValue="累计盈亏"
-        />
-        <StatBox 
-          label="当前库存" 
-          value={formatWan(actualInventory)}
-          subValue={`窗口余额总和`}
-        />
-        <StatBox 
-          label="平均成本" 
-          value={formatCurrency(avgCost)}
-          subValue="每千万哈夫币"
-        />
-      </div>
+      {/* KPI Grid - 客服隐藏敏感数据 */}
+      {!isDispatcher && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatBox 
+            label="历史累计利润" 
+            value={formatCurrency(totalProfit)}
+            subValue="累计盈亏"
+          />
+          <StatBox 
+            label="当前库存" 
+            value={formatWan(actualInventory)}
+            subValue={`窗口余额总和`}
+          />
+          <StatBox 
+            label="平均成本" 
+            value={formatCurrency(avgCost)}
+            subValue="每千万哈夫币"
+          />
+        </div>
+      )}
 
       {/* 进行中订单 + 订单记录 并排 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

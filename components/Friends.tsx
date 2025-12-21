@@ -63,6 +63,8 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
   const [searchResult, setSearchResult] = useState<any>(null);
   const [searchError, setSearchError] = useState('');
   const [selectedWindowId, setSelectedWindowId] = useState('');
+  const [selectedMachineId, setSelectedMachineId] = useState('');
+  const [transferType, setTransferType] = useState<'window' | 'machine'>('window');
   const [showMachineTransferModal, setShowMachineTransferModal] = useState<Friend | null>(null);
   const [transferPrice, setTransferPrice] = useState('');
   const { showSuccess, showAlert, ModalComponent } = useCyberModal();
@@ -162,8 +164,8 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
     return totalAmount > 0 ? totalCost / totalAmount : 0;
   })();
 
-  // 窗口转让（改名但保留原来的云机转让逻辑，只是改成选择窗口）
-  const handleMachineTransfer = async () => {
+  // 窗口转让
+  const handleWindowTransfer = async () => {
     if (!showMachineTransferModal || !selectedWindowId) return;
     const window = cloudWindows.find(w => w.id === selectedWindowId);
     if (!window) return;
@@ -198,6 +200,56 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
     }
   };
 
+  // 云机转让（转让整个云机及其所有窗口）
+  const handleFullMachineTransfer = async () => {
+    if (!showMachineTransferModal || !selectedMachineId) return;
+    const machine = cloudMachines.find(m => m.id === selectedMachineId);
+    if (!machine) return;
+    
+    // 获取该云机下所有未分配的窗口
+    const machineWindows = cloudWindows.filter(w => w.machineId === selectedMachineId && !w.userId);
+    if (machineWindows.length === 0) {
+      showAlert('无法转让', '该云机下没有可转让的窗口（已分配给员工的窗口不能转让）');
+      return;
+    }
+    
+    const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+    const price = parseFloat(transferPrice) || (totalGold * avgCostPerGold);
+    
+    const res = await machineTransferApi.request({
+      fromTenantId: tenantId,
+      fromTenantName: tenantName,
+      toTenantId: showMachineTransferModal.tenantId,
+      toTenantName: showMachineTransferModal.name,
+      machineId: selectedMachineId,
+      machineInfo: { phone: machine.phone, platform: machine.platform, loginType: machine.loginType, loginPassword: machine.loginPassword },
+      windowIds: machineWindows.map(w => w.id),
+      windowsInfo: machineWindows.map(w => ({ windowNumber: w.windowNumber, goldBalance: w.goldBalance })),
+      price: price,
+      totalGold
+    });
+    
+    if (res.success) {
+      showSuccess('发送成功', '云机转让请求已发送');
+      setShowMachineTransferModal(null);
+      setSelectedMachineId('');
+      setTransferPrice('');
+      setTransferType('window');
+      loadData();
+    } else {
+      showAlert('发送失败', res.error);
+    }
+  };
+
+  // 统一的转让处理
+  const handleTransfer = () => {
+    if (transferType === 'window') {
+      handleWindowTransfer();
+    } else {
+      handleFullMachineTransfer();
+    }
+  };
+
   const handleRespondMachineTransfer = async (transferId: string, accept: boolean) => {
     await machineTransferApi.respond(transferId, accept);
     loadData();
@@ -213,6 +265,11 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
 
   // 可转让的窗口（未分配给员工的）
   const transferableWindows = cloudWindows.filter(w => !w.userId);
+  
+  // 可转让的云机（至少有一个未分配窗口的云机）
+  const transferableMachines = cloudMachines.filter(m => 
+    cloudWindows.some(w => w.machineId === m.id && !w.userId)
+  );
 
   return (
     <div className="space-y-6">
@@ -420,59 +477,145 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
         )}
       </GlassCard>
 
-      {/* 窗口转让弹窗 */}
+      {/* 转让弹窗 */}
       {showMachineTransferModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-md w-full">
+          <div className="bg-cyber-panel border border-cyber-primary/30 p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-mono text-cyber-primary mb-4 flex items-center gap-2">
-              <ArrowRightLeft size={20} /> 转让窗口给 {showMachineTransferModal.name}
+              <ArrowRightLeft size={20} /> 转让给 {showMachineTransferModal.name}
             </h3>
+            
+            {/* 转让类型选择 */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-2 block">选择要转让的窗口</label>
-              <select
-                value={selectedWindowId}
-                onChange={e => {
-                  setSelectedWindowId(e.target.value);
-                  // 自动计算默认价格
-                  const w = cloudWindows.find(win => win.id === e.target.value);
-                  if (w) {
-                    const defaultPrice = (w.goldBalance * avgCostPerGold).toFixed(2);
-                    setTransferPrice(defaultPrice);
-                  }
-                }}
-                className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2"
-              >
-                <option value="">请选择窗口</option>
-                {transferableWindows.map(w => {
-                  const machine = cloudMachines.find(m => m.id === w.machineId);
-                  return (
-                    <option key={w.id} value={w.id}>
-                      #{w.windowNumber} - {machine?.phone} - {formatWan(w.goldBalance)}
-                    </option>
-                  );
-                })}
-              </select>
-              {transferableWindows.length === 0 && (
-                <p className="text-yellow-400 text-sm mt-2">没有可转让的窗口（已分配给员工的窗口不能转让）</p>
-              )}
-            </div>
-            {selectedWindowId && (
-              <div className="mb-4 p-3 bg-black/30 rounded border border-cyber-primary/20">
-                <div className="text-sm text-gray-400 mb-2">窗口详情:</div>
-                {(() => {
-                  const window = cloudWindows.find(w => w.id === selectedWindowId);
-                  const machine = cloudMachines.find(m => m.id === window?.machineId);
-                  return (
-                    <div className="text-sm">
-                      <div>窗口号: #{window?.windowNumber}</div>
-                      <div>云机: {machine?.phone} ({machine?.platform})</div>
-                      <div className="text-cyber-accent">余额: {formatWan(window?.goldBalance || 0)}</div>
-                      <div className="text-gray-500">平均币价: ¥{(avgCostPerGold * 10000000).toFixed(2)}/千万</div>
-                    </div>
-                  );
-                })()}
+              <label className="text-sm text-gray-400 mb-2 block">转让类型</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setTransferType('window'); setSelectedMachineId(''); }}
+                  className={`flex-1 py-2 px-3 border font-mono text-sm ${transferType === 'window' ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-gray-600 text-gray-400'}`}
+                >
+                  转让窗口
+                </button>
+                <button
+                  onClick={() => { setTransferType('machine'); setSelectedWindowId(''); }}
+                  className={`flex-1 py-2 px-3 border font-mono text-sm ${transferType === 'machine' ? 'bg-green-500/20 border-green-500 text-green-400' : 'border-gray-600 text-gray-400'}`}
+                >
+                  <Server size={14} className="inline mr-1" /> 转让云机
+                </button>
               </div>
+            </div>
+
+            {/* 窗口转让 */}
+            {transferType === 'window' && (
+              <>
+                <div className="mb-4">
+                  <label className="text-sm text-gray-400 mb-2 block">选择要转让的窗口</label>
+                  <select
+                    value={selectedWindowId}
+                    onChange={e => {
+                      setSelectedWindowId(e.target.value);
+                      const w = cloudWindows.find(win => win.id === e.target.value);
+                      if (w) {
+                        const defaultPrice = (w.goldBalance * avgCostPerGold).toFixed(2);
+                        setTransferPrice(defaultPrice);
+                      }
+                    }}
+                    className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2"
+                  >
+                    <option value="">请选择窗口</option>
+                    {transferableWindows.map(w => {
+                      const machine = cloudMachines.find(m => m.id === w.machineId);
+                      return (
+                        <option key={w.id} value={w.id}>
+                          #{w.windowNumber} - {machine?.phone} - {formatWan(w.goldBalance)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {transferableWindows.length === 0 && (
+                    <p className="text-yellow-400 text-sm mt-2">没有可转让的窗口（已分配给员工的窗口不能转让）</p>
+                  )}
+                </div>
+                {selectedWindowId && (
+                  <div className="mb-4 p-3 bg-black/30 rounded border border-cyber-primary/20">
+                    <div className="text-sm text-gray-400 mb-2">窗口详情:</div>
+                    {(() => {
+                      const window = cloudWindows.find(w => w.id === selectedWindowId);
+                      const machine = cloudMachines.find(m => m.id === window?.machineId);
+                      return (
+                        <div className="text-sm">
+                          <div>窗口号: #{window?.windowNumber}</div>
+                          <div>云机: {machine?.phone} ({machine?.platform})</div>
+                          <div className="text-cyber-accent">余额: {formatWan(window?.goldBalance || 0)}</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </>
             )}
+
+            {/* 云机转让 */}
+            {transferType === 'machine' && (
+              <>
+                <div className="mb-4">
+                  <label className="text-sm text-gray-400 mb-2 block">选择要转让的云机</label>
+                  <select
+                    value={selectedMachineId}
+                    onChange={e => {
+                      setSelectedMachineId(e.target.value);
+                      if (e.target.value) {
+                        const machineWindows = cloudWindows.filter(w => w.machineId === e.target.value && !w.userId);
+                        const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                        const defaultPrice = (totalGold * avgCostPerGold).toFixed(2);
+                        setTransferPrice(defaultPrice);
+                      }
+                    }}
+                    className="w-full bg-black/40 border border-green-500/30 text-cyber-text font-mono px-3 py-2"
+                  >
+                    <option value="">请选择云机</option>
+                    {transferableMachines.map(m => {
+                      const machineWindows = cloudWindows.filter(w => w.machineId === m.id && !w.userId);
+                      const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                      return (
+                        <option key={m.id} value={m.id}>
+                          {m.phone} ({m.platform}) - {machineWindows.length}个窗口 - {formatWan(totalGold)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {transferableMachines.length === 0 && (
+                    <p className="text-yellow-400 text-sm mt-2">没有可转让的云机</p>
+                  )}
+                </div>
+                {selectedMachineId && (
+                  <div className="mb-4 p-3 bg-black/30 rounded border border-green-500/20">
+                    <div className="text-sm text-gray-400 mb-2">云机详情:</div>
+                    {(() => {
+                      const machine = cloudMachines.find(m => m.id === selectedMachineId);
+                      const machineWindows = cloudWindows.filter(w => w.machineId === selectedMachineId && !w.userId);
+                      const totalGold = machineWindows.reduce((sum, w) => sum + w.goldBalance, 0);
+                      return (
+                        <div className="text-sm">
+                          <div>手机号: {machine?.phone}</div>
+                          <div>平台: {machine?.platform}</div>
+                          <div>登录方式: {machine?.loginType === 'password' ? `密码 (${machine?.loginPassword})` : '验证码'}</div>
+                          <div className="text-green-400 mt-2">包含 {machineWindows.length} 个窗口:</div>
+                          <div className="mt-1 max-h-32 overflow-y-auto">
+                            {machineWindows.map(w => (
+                              <div key={w.id} className="text-xs text-gray-400">
+                                #{w.windowNumber} - {formatWan(w.goldBalance)}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="text-cyber-accent mt-2">总余额: {formatWan(totalGold)}</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="mb-4">
               <label className="text-sm text-gray-400 mb-2 block">转让价格（元）</label>
               <input
@@ -486,10 +629,10 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
               <p className="text-xs text-gray-500 mt-1">默认按平均币价计算，对方接收后会自动创建采购记录</p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => { setShowMachineTransferModal(null); setSelectedWindowId(''); setTransferPrice(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+              <button onClick={() => { setShowMachineTransferModal(null); setSelectedWindowId(''); setSelectedMachineId(''); setTransferPrice(''); setTransferType('window'); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
                 取消
               </button>
-              <CyberButton onClick={handleMachineTransfer} disabled={!selectedWindowId} className="flex-1">
+              <CyberButton onClick={handleTransfer} disabled={transferType === 'window' ? !selectedWindowId : !selectedMachineId} className="flex-1">
                 确认转让
               </CyberButton>
             </div>

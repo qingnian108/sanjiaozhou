@@ -4,20 +4,32 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ========== 微信支付配置 ==========
-// 请在环境变量或配置文件中设置这些值
+// 读取私钥文件
+let privateKey = '';
+try {
+  const keyPath = path.join(__dirname, 'apiclient_key.pem');
+  if (fs.existsSync(keyPath)) {
+    privateKey = fs.readFileSync(keyPath, 'utf8');
+  }
+} catch (err) {
+  console.error('读取私钥文件失败:', err.message);
+}
+
 const WECHAT_PAY_CONFIG = {
   mchid: process.env.WECHAT_MCHID || '',           // 商户号
   appid: process.env.WECHAT_APPID || '',           // 应用ID
   apiV3Key: process.env.WECHAT_API_V3_KEY || '',   // APIv3密钥
-  serialNo: process.env.WECHAT_SERIAL_NO || '',    // 证书序列号
-  privateKey: process.env.WECHAT_PRIVATE_KEY || '', // 私钥内容
-  notifyUrl: process.env.WECHAT_NOTIFY_URL || 'https://your-domain.com/api/recharge/notify'
+  serialNo: process.env.WECHAT_CERT_SERIAL || '',  // 证书序列号
+  privateKey: privateKey,                           // 私钥内容
+  notifyUrl: process.env.WECHAT_NOTIFY_URL || 'https://jdj.9vvn.com/api/wechat/notify'
 };
 
 // 连接 MongoDB
@@ -29,25 +41,70 @@ mongoose.connect('mongodb://127.0.0.1:27017/sanjiaozhou')
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['super', 'admin', 'staff'], default: 'admin' },
+  role: { type: String, enum: ['super', 'admin', 'staff', 'dispatcher'], default: 'admin' },
   name: String,
   tenantId: String,
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model('User', UserSchema);
 
-// 租户账户模型
+// 租户账户模型 - 预付费模式
 const TenantAccountSchema = new mongoose.Schema({
   tenantId: { type: String, required: true, unique: true },
-  balance: { type: Number, default: 0 },
-  basePrice: { type: Number, default: 50 },
-  freeWindows: { type: Number, default: 5 },
-  pricePerWindow: { type: Number, default: 10 },
-  trialEndDate: String,
-  status: { type: String, enum: ['trial', 'active', 'suspended'], default: 'trial' },
+  balance: { type: Number, default: 0 },           // 账户余额
+  basePrice: { type: Number, default: 50 },        // 基础月费
+  pricePerWindow: { type: Number, default: 10 },   // 窗口单价/月
+  accountExpireDate: String,                        // 账户有效期（基础月费）
+  status: { type: String, enum: ['trial', 'active', 'expired', 'suspended'], default: 'trial' },
+  trialEndDate: String,                            // 试用截止日期
+  commissionRate: { type: Number, default: 0.1 },  // 返佣比例，默认10%
+  inviterId: String,                               // 邀请人租户ID
+  inviteCode: { type: String, unique: true, sparse: true }, // 随机邀请码
   createdAt: { type: Date, default: Date.now }
 });
 const TenantAccount = mongoose.model('TenantAccount', TenantAccountSchema);
+
+// 生成随机邀请码（6位字母数字）
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易混淆的字符
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// 生成唯一邀请码
+async function generateUniqueInviteCode() {
+  let code;
+  let exists = true;
+  while (exists) {
+    code = generateInviteCode();
+    exists = await TenantAccount.findOne({ inviteCode: code });
+  }
+  return code;
+}
+
+// 窗口订阅模型 - 每个窗口单独计费
+const WindowSubscriptionSchema = new mongoose.Schema({
+  tenantId: String,
+  windowCount: { type: Number, default: 0 },       // 已购买的窗口数量
+  expireDate: String,                               // 窗口有效期
+  createdAt: { type: Date, default: Date.now }
+});
+const WindowSubscription = mongoose.model('WindowSubscription', WindowSubscriptionSchema);
+
+// 购买记录模型
+const PurchaseRecordSchema = new mongoose.Schema({
+  tenantId: String,
+  type: { type: String, enum: ['base', 'window'] }, // base=基础月费, window=窗口
+  amount: Number,                                    // 金额
+  quantity: { type: Number, default: 1 },           // 数量（窗口购买时用）
+  months: { type: Number, default: 1 },             // 购买月数
+  expireDate: String,                               // 到期日期
+  createdAt: { type: Date, default: Date.now }
+});
+const PurchaseRecord = mongoose.model('PurchaseRecord', PurchaseRecordSchema);
 
 // 月度账单模型
 const MonthlyBillSchema = new mongoose.Schema({
@@ -103,6 +160,28 @@ const RechargeRecordSchema = new mongoose.Schema({
 });
 const RechargeRecord = mongoose.model('RechargeRecord', RechargeRecordSchema);
 
+// 邀请关系模型
+const ReferralSchema = new mongoose.Schema({
+  inviterId: { type: String, required: true },     // 邀请人租户ID
+  inviteeId: { type: String, required: true },     // 被邀请人租户ID
+  inviteCode: String,                               // 使用的邀请码
+  createdAt: { type: Date, default: Date.now }
+});
+ReferralSchema.index({ inviteeId: 1 }, { unique: true }); // 每个被邀请人只能有一个邀请人
+const Referral = mongoose.model('Referral', ReferralSchema);
+
+// 返佣记录模型
+const CommissionSchema = new mongoose.Schema({
+  inviterId: { type: String, required: true },     // 邀请人租户ID
+  inviteeId: { type: String, required: true },     // 被邀请人租户ID
+  rechargeOrderId: String,                          // 关联的充值订单ID
+  rechargeAmount: Number,                           // 充值金额
+  commissionRate: Number,                           // 返佣比例
+  commissionAmount: Number,                         // 返佣金额
+  createdAt: { type: Date, default: Date.now }
+});
+const Commission = mongoose.model('Commission', CommissionSchema);
+
 // 通用数据模型
 const DataSchema = new mongoose.Schema({
   collection: String,
@@ -114,9 +193,18 @@ const Data = mongoose.model('Data', DataSchema);
 // 注册
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, inviteCode } = req.body;
     const exists = await User.findOne({ username });
     if (exists) return res.json({ success: false, error: '用户已存在' });
+    
+    // 验证邀请码（如果提供）- 通过 inviteCode 字段查找
+    let inviterId = null;
+    if (inviteCode) {
+      const inviterAccount = await TenantAccount.findOne({ inviteCode: inviteCode.toUpperCase() });
+      if (inviterAccount) {
+        inviterId = inviterAccount.tenantId;
+      }
+    }
     
     const hash = await bcrypt.hash(password, 10);
     const tenantId = new mongoose.Types.ObjectId().toString();
@@ -129,6 +217,9 @@ app.post('/api/register', async (req, res) => {
     });
     await user.save();
     
+    // 生成唯一邀请码
+    const newInviteCode = await generateUniqueInviteCode();
+    
     // 创建租户账户，设置7天试用期
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + 7);
@@ -139,9 +230,22 @@ app.post('/api/register', async (req, res) => {
       freeWindows: 5,
       pricePerWindow: 10,
       trialEndDate: trialEndDate.toISOString().split('T')[0],
-      status: 'trial'
+      status: 'trial',
+      commissionRate: 0.1,
+      inviterId: inviterId,
+      inviteCode: newInviteCode
     });
     await account.save();
+    
+    // 如果有邀请人，创建邀请关系
+    if (inviterId) {
+      const referral = new Referral({
+        inviterId,
+        inviteeId: tenantId,
+        inviteCode
+      });
+      await referral.save();
+    }
     
     res.json({ success: true, user: { id: user._id, username, role: 'admin', name: username, tenantId: user.tenantId } });
   } catch (err) {
@@ -194,6 +298,42 @@ app.post('/api/staff', async (req, res) => {
     const user = new User({ username, password: hash, role: 'staff', name, tenantId });
     await user.save();
     res.json({ success: true, staff: { id: user._id, username, name, tenantId } });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 添加客服
+app.post('/api/dispatcher', async (req, res) => {
+  try {
+    const { username, password, name, tenantId } = req.body;
+    const exists = await User.findOne({ username });
+    if (exists) return res.json({ success: false, error: '用户名已存在' });
+    
+    const hash = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hash, role: 'dispatcher', name, tenantId });
+    await user.save();
+    res.json({ success: true, dispatcher: { id: user._id, username, name, tenantId, role: 'dispatcher' } });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取客服列表
+app.get('/api/dispatchers/:tenantId', async (req, res) => {
+  try {
+    const dispatchers = await User.find({ tenantId: req.params.tenantId, role: 'dispatcher' });
+    res.json({ success: true, data: dispatchers.map(d => ({ id: d._id, username: d.username, name: d.name, role: d.role, tenantId: d.tenantId })) });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 删除客服
+app.delete('/api/dispatcher/:id', async (req, res) => {
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -307,6 +447,128 @@ app.post('/api/settings/:tenantId', async (req, res) => {
       { upsert: true }
     );
     res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 邀请返佣系统 API ==========
+
+// 用户名脱敏函数
+function maskUsername(username) {
+  if (!username || username.length <= 4) return username;
+  const start = username.slice(0, 3);
+  const end = username.slice(-2);
+  return `${start}****${end}`;
+}
+
+// 验证邀请码
+app.get('/api/referral/validate/:inviteCode', async (req, res) => {
+  try {
+    const { inviteCode } = req.params;
+    // 通过 inviteCode 字段查找账户
+    const inviterAccount = await TenantAccount.findOne({ inviteCode: inviteCode.toUpperCase() });
+    if (!inviterAccount) {
+      return res.json({ success: true, valid: false });
+    }
+    // 获取邀请人用户信息
+    const inviter = await User.findOne({ tenantId: inviterAccount.tenantId, role: 'admin' });
+    res.json({ 
+      success: true, 
+      valid: true, 
+      inviterName: inviter ? maskUsername(inviter.name || inviter.username) : '未知',
+      inviterId: inviterAccount.tenantId
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取邀请信息
+app.get('/api/referral/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    
+    // 获取账户信息
+    let account = await TenantAccount.findOne({ tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    // 如果没有邀请码，生成一个
+    if (!account.inviteCode) {
+      account.inviteCode = await generateUniqueInviteCode();
+      await account.save();
+    }
+    
+    const commissionRate = account.commissionRate || 0.1;
+    
+    // 统计邀请人数
+    const inviteeCount = await Referral.countDocuments({ inviterId: tenantId });
+    
+    // 统计累计返佣
+    const commissions = await Commission.find({ inviterId: tenantId });
+    const totalCommission = commissions.reduce((sum, c) => sum + c.commissionAmount, 0);
+    
+    res.json({
+      success: true,
+      data: {
+        inviteCode: account.inviteCode,
+        inviteLink: `https://jdj.9vvn.com?ref=${account.inviteCode}`,
+        commissionRate,
+        stats: {
+          inviteeCount,
+          totalCommission
+        }
+      }
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取被邀请人列表
+app.get('/api/referral/:tenantId/invitees', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const referrals = await Referral.find({ inviterId: tenantId }).sort({ createdAt: -1 });
+    
+    // 获取被邀请人信息
+    const invitees = [];
+    for (const ref of referrals) {
+      const user = await User.findOne({ tenantId: ref.inviteeId, role: 'admin' });
+      if (user) {
+        invitees.push({
+          username: maskUsername(user.username),
+          createdAt: ref.createdAt
+        });
+      }
+    }
+    
+    res.json({ success: true, data: invitees });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取返佣记录
+app.get('/api/referral/:tenantId/commissions', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const commissions = await Commission.find({ inviterId: tenantId }).sort({ createdAt: -1 });
+    
+    // 获取被邀请人信息
+    const records = [];
+    for (const comm of commissions) {
+      const user = await User.findOne({ tenantId: comm.inviteeId, role: 'admin' });
+      records.push({
+        inviteeUsername: maskUsername(user?.username || '未知'),
+        rechargeAmount: comm.rechargeAmount,
+        commissionRate: comm.commissionRate,
+        commissionAmount: comm.commissionAmount,
+        createdAt: comm.createdAt
+      });
+    }
+    
+    res.json({ success: true, data: records });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -623,19 +885,33 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       // 计算利润 = 转让价格 - 成本
       const profit = transfer.price - transferCost;
       
-      // 只更新窗口的 tenantId，不转移云机（云机只是载体，可以被多个租户的窗口共享）
+      // 为接收方创建新的云机记录
+      const newMachine = new Data({
+        collection: 'cloudMachines',
+        tenantId: transfer.toTenantId,
+        data: {
+          phone: transfer.machineInfo?.phone || '转让云机',
+          platform: transfer.machineInfo?.platform || '好友转让',
+          loginType: transfer.machineInfo?.loginType || 'code',
+          loginPassword: transfer.machineInfo?.loginPassword || ''
+        }
+      });
+      await newMachine.save();
+      const newMachineId = newMachine._id.toString();
+      console.log('Created new machine for receiver:', newMachineId);
+      
+      // 更新窗口的 tenantId 和 machineId
       for (const windowId of transfer.windowIds) {
-        // 先找到窗口
         let windowDoc = await Data.findById(windowId);
         if (!windowDoc) {
           windowDoc = await Data.findOne({ collection: 'cloudWindows', 'data.id': windowId });
         }
         
         if (windowDoc) {
-          // 更新窗口的租户ID，并清除分配的员工
           windowDoc.tenantId = transfer.toTenantId;
           if (windowDoc.data) {
             windowDoc.data.userId = null;
+            windowDoc.data.machineId = newMachineId;  // 关联到新云机
           }
           await windowDoc.save();
           console.log('Window transferred:', windowId);
@@ -709,7 +985,130 @@ app.get('/api/account/:tenantId', async (req, res) => {
       });
       await account.save();
     }
-    res.json({ success: true, data: account });
+    
+    // 获取窗口订阅信息
+    let windowSub = await WindowSubscription.findOne({ tenantId: req.params.tenantId });
+    if (!windowSub) {
+      windowSub = { windowCount: 0, expireDate: null };
+    }
+    
+    // 检查并更新状态
+    const today = new Date().toISOString().split('T')[0];
+    if (account.status === 'trial' && account.trialEndDate && account.trialEndDate < today) {
+      account.status = 'expired';
+      await account.save();
+    } else if (account.status === 'active' && account.accountExpireDate && account.accountExpireDate < today) {
+      account.status = 'expired';
+      await account.save();
+    }
+    
+    res.json({ 
+      success: true, 
+      data: {
+        ...account.toObject(),
+        windowCount: windowSub.windowCount,
+        windowExpireDate: windowSub.expireDate
+      }
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 购买基础月费
+app.post('/api/account/:tenantId/buy-base', async (req, res) => {
+  try {
+    const { months = 1 } = req.body;
+    const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    const totalCost = account.basePrice * months;
+    if (account.balance < totalCost) {
+      return res.json({ success: false, error: `余额不足，需要 ¥${totalCost}，当前余额 ¥${account.balance}` });
+    }
+    
+    // 扣款
+    account.balance -= totalCost;
+    
+    // 计算新的到期日期
+    let startDate = new Date();
+    if (account.accountExpireDate && account.accountExpireDate > startDate.toISOString().split('T')[0]) {
+      startDate = new Date(account.accountExpireDate);
+    }
+    startDate.setMonth(startDate.getMonth() + months);
+    account.accountExpireDate = startDate.toISOString().split('T')[0];
+    account.status = 'active';
+    await account.save();
+    
+    // 记录购买
+    await new PurchaseRecord({
+      tenantId: req.params.tenantId,
+      type: 'base',
+      amount: totalCost,
+      months,
+      expireDate: account.accountExpireDate
+    }).save();
+    
+    res.json({ success: true, data: account, message: `已购买${months}个月基础服务，有效期至 ${account.accountExpireDate}` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 购买窗口
+app.post('/api/account/:tenantId/buy-windows', async (req, res) => {
+  try {
+    const { count = 1, months = 1 } = req.body;
+    const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
+    if (!account) return res.json({ success: false, error: '账户不存在' });
+    
+    const totalCost = account.pricePerWindow * count * months;
+    if (account.balance < totalCost) {
+      return res.json({ success: false, error: `余额不足，需要 ¥${totalCost}，当前余额 ¥${account.balance}` });
+    }
+    
+    // 扣款
+    account.balance -= totalCost;
+    await account.save();
+    
+    // 更新窗口订阅
+    let windowSub = await WindowSubscription.findOne({ tenantId: req.params.tenantId });
+    if (!windowSub) {
+      windowSub = new WindowSubscription({ tenantId: req.params.tenantId, windowCount: 0 });
+    }
+    
+    // 计算新的到期日期
+    let startDate = new Date();
+    if (windowSub.expireDate && windowSub.expireDate > startDate.toISOString().split('T')[0]) {
+      startDate = new Date(windowSub.expireDate);
+    }
+    startDate.setMonth(startDate.getMonth() + months);
+    
+    windowSub.windowCount += count;
+    windowSub.expireDate = startDate.toISOString().split('T')[0];
+    await windowSub.save();
+    
+    // 记录购买
+    await new PurchaseRecord({
+      tenantId: req.params.tenantId,
+      type: 'window',
+      amount: totalCost,
+      quantity: count,
+      months,
+      expireDate: windowSub.expireDate
+    }).save();
+    
+    res.json({ success: true, data: { account, windowSub }, message: `已购买${count}个窗口${months}个月，有效期至 ${windowSub.expireDate}` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取购买记录
+app.get('/api/account/:tenantId/purchases', async (req, res) => {
+  try {
+    const records = await PurchaseRecord.find({ tenantId: req.params.tenantId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: records });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -790,6 +1189,7 @@ app.post('/api/recharge/create', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'SanJiaoZhou/1.0',
         'Authorization': `WECHATPAY2-SHA256-RSA2048 mchid="${WECHAT_PAY_CONFIG.mchid}",nonce_str="${nonceStr}",timestamp="${timestamp}",serial_no="${WECHAT_PAY_CONFIG.serialNo}",signature="${signature}"`
       }
     };
@@ -889,6 +1289,38 @@ app.post('/api/recharge/notify', express.raw({ type: 'application/json' }), asyn
             method: 'wechat'
           });
           await record.save();
+          
+          // 处理返佣：检查是否有邀请人
+          if (account.inviterId) {
+            try {
+              const inviterAccount = await TenantAccount.findOne({ tenantId: account.inviterId });
+              if (inviterAccount && inviterAccount.status !== 'suspended') {
+                // 计算返佣金额
+                const commissionRate = inviterAccount.commissionRate || 0.1;
+                const commissionAmount = order.amount * commissionRate;
+                
+                // 增加邀请人余额
+                inviterAccount.balance += commissionAmount;
+                await inviterAccount.save();
+                
+                // 创建返佣记录
+                const commission = new Commission({
+                  inviterId: account.inviterId,
+                  inviteeId: order.tenantId,
+                  rechargeOrderId: order._id.toString(),
+                  rechargeAmount: order.amount,
+                  commissionRate,
+                  commissionAmount
+                });
+                await commission.save();
+                
+                console.log(`返佣成功: 邀请人${account.inviterId}获得${commissionAmount}元`);
+              }
+            } catch (commErr) {
+              console.error('处理返佣错误:', commErr);
+              // 返佣失败不影响充值流程
+            }
+          }
         }
       }
     }
@@ -935,25 +1367,108 @@ app.get('/api/super/tenants', async (req, res) => {
     const admins = await User.find({ role: 'admin' });
     const accounts = await TenantAccount.find();
     const accountMap = {};
-    accounts.forEach(a => accountMap[a.tenantId] = a);
-    
-    // 获取每个租户的窗口数
+    accounts.forEach(a => (accountMap[a.tenantId] = a));
+
+    // 获取每个租户的窗口数和利润数据
     const windowCounts = {};
+    const profitData = {};
+    const today = new Date().toISOString().split('T')[0];
+
     for (const admin of admins) {
-      const windows = await Data.find({ collection: 'cloudWindows', tenantId: admin.tenantId });
+      const windows = await Data.find({
+        collection: 'cloudWindows',
+        tenantId: admin.tenantId,
+      });
       windowCounts[admin.tenantId] = windows.length;
+
+      // 获取设置
+      const settingsDoc = await Data.findOne({
+        collection: 'settings',
+        tenantId: admin.tenantId,
+      });
+      const settings = settingsDoc?.data || {
+        orderUnitPrice: 60,
+        employeeCostRate: 12,
+      };
+
+      // 获取订单数据
+      const orders = await Data.find({
+        collection: 'orders',
+        tenantId: admin.tenantId,
+      });
+
+      // 获取采购数据
+      const purchases = await Data.find({
+        collection: 'purchases',
+        tenantId: admin.tenantId,
+      });
+
+      // 完全按照 Dashboard.tsx 的逻辑计算
+      // avgCost = totalCost / (totalAmount / 10000000) = 元/千万
+      const totalPurchaseAmount = purchases.reduce((sum, p) => sum + (p.data?.amount || 0), 0);
+      const totalPurchaseCost = purchases.reduce((sum, p) => sum + (p.data?.cost || 0), 0);
+      const avgCost = totalPurchaseAmount > 0 ? totalPurchaseCost / (totalPurchaseAmount / 10000000) : 0;
+
+      // 计算利润 - 完全按照 Dashboard.tsx 的 totalProfit 计算
+      const calculateProfit = (orderList) => {
+        let totalRevenue = 0;
+        let profit = 0;
+
+        orderList.forEach((o) => {
+          const orderData = o.data || {};
+          const amount = orderData.amount || 0; // 万
+          const loss = orderData.loss || 0; // 实际数量
+          const lossInWan = loss / 10000; // 转成万
+          const unitPrice = orderData.unitPrice !== undefined ? orderData.unitPrice : (settings.orderUnitPrice || 10);
+
+          // 收入 = 订单金额(万) / 1000 * 单价
+          const revenue = (amount / 1000) * unitPrice;
+          totalRevenue += revenue;
+
+          // 成本 = (订单金额 + 损耗万) / 1000 * avgCost(元/千万)
+          const cogs = ((amount + lossInWan) / 1000) * avgCost;
+          
+          // 员工成本 = 订单金额(万) / 1000 * 员工成本率
+          const laborCost = (amount / 1000) * (settings.employeeCostRate || 1);
+
+          profit += revenue - cogs - laborCost;
+        });
+
+        return { revenue: totalRevenue, profit };
+      };
+
+      // 只计算已完成订单
+      const completedOrders = orders.filter(o => o.data?.status === 'completed');
+      const totalStats = calculateProfit(completedOrders);
+
+      // 今日已完成订单
+      const todayCompletedOrders = completedOrders.filter(o => o.data?.date === today);
+      const todayStats = calculateProfit(todayCompletedOrders);
+
+      profitData[admin.tenantId] = {
+        totalRevenue: totalStats.revenue,
+        totalProfit: totalStats.profit,
+        todayRevenue: todayStats.revenue,
+        todayProfit: todayStats.profit,
+      };
     }
-    
-    const tenants = admins.map(a => ({
+
+    const tenants = admins.map((a) => ({
       id: a._id,
       username: a.username,
       name: a.name,
       tenantId: a.tenantId,
       createdAt: a.createdAt,
       account: accountMap[a.tenantId] || null,
-      windowCount: windowCounts[a.tenantId] || 0
+      windowCount: windowCounts[a.tenantId] || 0,
+      profit: profitData[a.tenantId] || {
+        totalRevenue: 0,
+        totalProfit: 0,
+        todayRevenue: 0,
+        todayProfit: 0,
+      },
     }));
-    
+
     res.json({ success: true, data: tenants });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -994,6 +1509,32 @@ app.post('/api/super/tenant/:tenantId/charge', async (req, res) => {
     });
     await record.save();
     
+    // 处理返佣：检查是否有邀请人（手动充值也触发返佣）
+    if (account.inviterId && amount > 0) {
+      try {
+        const inviterAccount = await TenantAccount.findOne({ tenantId: account.inviterId });
+        if (inviterAccount && inviterAccount.status !== 'suspended') {
+          const commissionRate = inviterAccount.commissionRate || 0.1;
+          const commissionAmount = amount * commissionRate;
+          
+          inviterAccount.balance += commissionAmount;
+          await inviterAccount.save();
+          
+          const commission = new Commission({
+            inviterId: account.inviterId,
+            inviteeId: tenantId,
+            rechargeOrderId: record.orderId,
+            rechargeAmount: amount,
+            commissionRate,
+            commissionAmount
+          });
+          await commission.save();
+        }
+      } catch (commErr) {
+        console.error('处理返佣错误:', commErr);
+      }
+    }
+    
     res.json({ success: true, data: account });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -1031,16 +1572,52 @@ app.post('/api/super/tenant/:tenantId/activate', async (req, res) => {
 // 修改租户费率设置
 app.post('/api/super/tenant/:tenantId/settings', async (req, res) => {
   try {
-    const { basePrice, freeWindows, pricePerWindow } = req.body;
+    const { basePrice, freeWindows, pricePerWindow, trialEndDate, status, commissionRate } = req.body;
     const account = await TenantAccount.findOne({ tenantId: req.params.tenantId });
     if (!account) return res.json({ success: false, error: '账户不存在' });
     
     if (basePrice !== undefined) account.basePrice = basePrice;
     if (freeWindows !== undefined) account.freeWindows = freeWindows;
     if (pricePerWindow !== undefined) account.pricePerWindow = pricePerWindow;
+    if (trialEndDate !== undefined) account.trialEndDate = trialEndDate;
+    if (status !== undefined) account.status = status;
+    if (commissionRate !== undefined) account.commissionRate = commissionRate;
     await account.save();
     
     res.json({ success: true, data: account });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取租户邀请统计
+app.get('/api/super/tenant/:tenantId/referral-stats', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const inviteeCount = await Referral.countDocuments({ inviterId: tenantId });
+    const commissions = await Commission.find({ inviterId: tenantId });
+    const totalCommission = commissions.reduce((sum, c) => sum + c.commissionAmount, 0);
+    
+    res.json({
+      success: true,
+      data: { inviteeCount, totalCommission }
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取全平台返佣统计
+app.get('/api/super/commission-stats', async (req, res) => {
+  try {
+    const allCommissions = await Commission.find();
+    const totalCommission = allCommissions.reduce((sum, c) => sum + c.commissionAmount, 0);
+    const totalReferrals = await Referral.countDocuments();
+    
+    res.json({
+      success: true,
+      data: { totalCommission, totalReferrals }
+    });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }

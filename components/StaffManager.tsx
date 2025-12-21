@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock, Plus } from 'lucide-react';
+import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock, Plus, ExternalLink } from 'lucide-react';
 import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { Staff, OrderRecord, Settings, CloudWindow, CloudMachine, WindowResult } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
@@ -16,9 +16,11 @@ interface StaffManagerProps {
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onCompleteOrder?: (orderId: string, windowResults: WindowResult[]) => void;
   onAddWindowToOrder?: (orderId: string, windowId: string) => Promise<void>;
+  onLoginAsStaff?: (staffId: string, staffName: string) => void;
+  isDispatcher?: boolean;
 }
 
-export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, cloudWindows, cloudMachines, onAddStaff, onDeleteStaff, onDeleteOrder, onAssignWindow, onCompleteOrder, onAddWindowToOrder }) => {
+export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, settings, cloudWindows, cloudMachines, onAddStaff, onDeleteStaff, onDeleteOrder, onAssignWindow, onCompleteOrder, onAddWindowToOrder, onLoginAsStaff, isDispatcher = false }) => {
   console.log('StaffManager received staffList:', staffList);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffUsername, setNewStaffUsername] = useState('');
@@ -185,44 +187,46 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   return (
     <div className="space-y-8 animate-fade-in">
       
-      {/* 1. Add Staff Section */}
-      <GlassCard>
-        <SectionHeader title="人事档案 // 创建员工账号" icon={Users} />
-        <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <CyberInput 
-            label="员工姓名" 
-            placeholder="输入姓名..."
-            value={newStaffName} 
-            onChange={(e: any) => setNewStaffName(e.target.value)} 
-          />
-          <CyberInput 
-            label="登录用户名" 
-            type="text"
-            placeholder="输入用户名..."
-            value={newStaffUsername} 
-            onChange={(e: any) => setNewStaffUsername(e.target.value)} 
-          />
-          <CyberInput 
-            label="登录密码" 
-            type="password"
-            placeholder="至少6位..."
-            value={newStaffPassword} 
-            onChange={(e: any) => setNewStaffPassword(e.target.value)} 
-          />
-          <div className="mb-4">
-            <NeonButton type="submit">
-              <span className="flex items-center gap-2">
-                {loading ? '创建中...' : <><UserPlus size={16} /> 创建账号</>}
-              </span>
-            </NeonButton>
-          </div>
-        </form>
-        {error && (
-          <div className="text-red-500 text-sm font-mono bg-red-500/10 border border-red-500/30 p-2 mt-2">
-            {error}
-          </div>
-        )}
-      </GlassCard>
+      {/* 1. Add Staff Section - 客服隐藏 */}
+      {!isDispatcher && (
+        <GlassCard>
+          <SectionHeader title="人事档案 // 创建员工账号" icon={Users} />
+          <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <CyberInput 
+              label="员工姓名" 
+              placeholder="输入姓名..."
+              value={newStaffName} 
+              onChange={(e: any) => setNewStaffName(e.target.value)} 
+            />
+            <CyberInput 
+              label="登录用户名" 
+              type="text"
+              placeholder="输入用户名..."
+              value={newStaffUsername} 
+              onChange={(e: any) => setNewStaffUsername(e.target.value)} 
+            />
+            <CyberInput 
+              label="登录密码" 
+              type="password"
+              placeholder="至少6位..."
+              value={newStaffPassword} 
+              onChange={(e: any) => setNewStaffPassword(e.target.value)} 
+            />
+            <div className="mb-4">
+              <NeonButton type="submit">
+                <span className="flex items-center gap-2">
+                  {loading ? '创建中...' : <><UserPlus size={16} /> 创建账号</>}
+                </span>
+              </NeonButton>
+            </div>
+          </form>
+          {error && (
+            <div className="text-red-500 text-sm font-mono bg-red-500/10 border border-red-500/30 p-2 mt-2">
+              {error}
+            </div>
+          )}
+        </GlassCard>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 2. Staff List / Filter */}
@@ -258,12 +262,23 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                       {stat.staff.role === 'admin' ? '管理员' : '员工'}
                     </div>
                   </div>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onDeleteStaff(stat.staff.id); }}
-                    className="text-gray-600 hover:text-red-500 z-10 p-1"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {onLoginAsStaff && stat.staff.role !== 'admin' && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onLoginAsStaff(stat.staff.id, stat.staff.name); }}
+                        className="text-purple-400 hover:text-purple-300 z-10 p-1"
+                        title="进入员工后台"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                    )}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onDeleteStaff(stat.staff.id); }}
+                      className="text-gray-600 hover:text-red-500 z-10 p-1"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono text-gray-500 font-bold">
                   <div>总单量: <span className="text-gray-300">{stat.totalOrders}</span></div>

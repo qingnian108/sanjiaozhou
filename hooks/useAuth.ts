@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { authApi, staffApi } from '../api';
+import { authApi, staffApi, dispatcherApi } from '../api';
 
 interface User {
   id: string;
   username: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'dispatcher';
   name: string;
   tenantId: string;
 }
@@ -51,9 +51,9 @@ export function useAuth() {
     }
   };
 
-  const registerAdmin = async (username: string, password: string, name: string): Promise<boolean> => {
+  const registerAdmin = async (username: string, password: string, name: string, inviteCode?: string): Promise<boolean> => {
     try {
-      const res = await authApi.register(username, password);
+      const res = await authApi.register(username, password, inviteCode);
       if (res.success) {
         // 更新用户名称
         const userData = { ...res.user, name };
@@ -100,8 +100,23 @@ export function useAuth() {
     }
   };
 
+  const createDispatcherAccount = async (username: string, password: string, name: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const res = await dispatcherApi.add({ username, password, name, tenantId: user.tenantId });
+      if (res.success) {
+        return true;
+      }
+      throw new Error(res.error || '创建客服失败');
+    } catch (err: any) {
+      console.error('创建客服错误:', err);
+      throw err;
+    }
+  };
+
   // 兼容旧代码的属性
   const isAdmin = user?.role === 'admin';
+  const isDispatcher = user?.role === 'dispatcher';
   const staffInfo = user ? {
     id: user.id,
     name: user.name,
@@ -122,7 +137,9 @@ export function useAuth() {
     logout, 
     changePassword, 
     createStaffAccount,
+    createDispatcherAccount,
     isAdmin,
+    isDispatcher,
     getTenantId
   };
 }

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, UserPlus, Hexagon, ArrowLeft, Key, Shield } from 'lucide-react';
+import { LogIn, UserPlus, Hexagon, ArrowLeft, Key, Shield, Gift } from 'lucide-react';
 import { CyberInput, CyberButton, useCyberModal } from './CyberUI';
-import { superApi } from '../api';
+import { superApi, referralApi } from '../api';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<void>;
-  onRegisterAdmin: (username: string, password: string, name: string) => Promise<void>;
+  onRegisterAdmin: (username: string, password: string, name: string, inviteCode?: string) => Promise<void>;
   onChangePassword?: (username: string, oldPassword: string, newPassword: string) => Promise<void>;
   onSuperLogin?: (superUser: any) => void;
 }
@@ -15,16 +15,56 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteValid, setInviteValid] = useState<boolean | null>(null);
+  const [inviterName, setInviterName] = useState('');
   const { showSuccess, showAlert, ModalComponent } = useCyberModal();
 
-  const VALID_INVITE_CODE = '13051818686';
+  // 从URL参数获取邀请码
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref');
+    if (ref) {
+      setInviteCode(ref);
+      validateInviteCode(ref);
+    }
+  }, []);
+
+  // 验证邀请码
+  const validateInviteCode = async (code: string) => {
+    if (!code) {
+      setInviteValid(null);
+      setInviterName('');
+      return;
+    }
+    try {
+      const res = await referralApi.validate(code);
+      if (res.success) {
+        setInviteValid(res.valid);
+        setInviterName(res.valid ? res.inviterName : '');
+      }
+    } catch (err) {
+      setInviteValid(false);
+    }
+  };
+
+  // 邀请码输入变化
+  const handleInviteCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const code = e.target.value;
+    setInviteCode(code);
+    if (code.length >= 3) {
+      validateInviteCode(code);
+    } else {
+      setInviteValid(null);
+      setInviterName('');
+    }
+  };
 
   // 加载保存的登录信息
   useEffect(() => {
@@ -51,12 +91,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
           setLoading(false);
           return;
         }
-        if (inviteCode !== VALID_INVITE_CODE) {
-          setError('邀请码错误');
-          setLoading(false);
-          return;
-        }
-        await onRegisterAdmin(username, password, name);
+        await onRegisterAdmin(username, password, name, inviteCode || undefined);
       } else if (mode === 'changePassword') {
         if (!onChangePassword) {
           setError('修改密码功能不可用');
@@ -116,11 +151,13 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
   const resetForm = () => {
     setPassword('');
     setName('');
-    setInviteCode('');
     setOldPassword('');
     setNewPassword('');
     setConfirmPassword('');
     setError('');
+    setInviteCode('');
+    setInviteValid(null);
+    setInviterName('');
   };
 
   return (
@@ -147,7 +184,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
             三角洲<span className="text-cyber-primary">撞车系统</span>
           </h1>
           <p className="text-cyber-primary/60 font-mono text-xs mt-2">
-            {mode === 'adminRegister' ? 'ADMIN REGISTRATION' : mode === 'changePassword' ? 'CHANGE PASSWORD' : mode === 'superLogin' ? 'SUPER ADMIN' : 'SYSTEM LOGIN'}
+            {mode === 'adminRegister' ? 'FREE TRIAL REGISTRATION' : mode === 'changePassword' ? 'CHANGE PASSWORD' : mode === 'superLogin' ? 'SUPER ADMIN' : 'SYSTEM LOGIN'}
           </p>
         </div>
 
@@ -195,24 +232,36 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
           )}
 
           {mode === 'adminRegister' && (
-            <>
+            <CyberInput
+              label="密码"
+              type="password"
+              value={password}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+              placeholder="输入密码（至少6位）"
+              required
+            />
+          )}
+
+          {mode === 'adminRegister' && (
+            <div>
               <CyberInput
-                label="密码"
-                type="password"
-                value={password}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-                placeholder="输入密码"
-                required
-              />
-              <CyberInput
-                label="邀请码"
+                label="邀请码（选填）"
                 type="text"
                 value={inviteCode}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInviteCode(e.target.value)}
-                placeholder="输入邀请码"
-                required
+                onChange={handleInviteCodeChange}
+                placeholder="输入邀请人的账号"
               />
-            </>
+              {inviteValid === true && (
+                <div className="mt-1 text-green-400 text-xs font-mono flex items-center gap-1">
+                  <Gift size={12} /> 邀请人: {inviterName}
+                </div>
+              )}
+              {inviteValid === false && inviteCode && (
+                <div className="mt-1 text-yellow-400 text-xs font-mono">
+                  邀请码无效，但您仍可继续注册
+                </div>
+              )}
+            </div>
           )}
 
           {mode === 'changePassword' && (
@@ -266,7 +315,7 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
           <CyberButton type="submit" disabled={loading} className="w-full">
             {loading ? '处理中...' : (
               <>
-                {mode === 'adminRegister' && <><UserPlus size={16} className="mr-2" />注册管理员</>}
+                {mode === 'adminRegister' && <><UserPlus size={16} className="mr-2" />免费试用</>}
                 {mode === 'changePassword' && <><Key size={16} className="mr-2" />修改密码</>}
                 {mode === 'superLogin' && <><Shield size={16} className="mr-2" />超管登录</>}
                 {mode === 'login' && <><LogIn size={16} className="mr-2" />登录</>}
@@ -287,10 +336,10 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
               onClick={() => { setMode('adminRegister'); resetForm(); }}
               className="text-cyber-primary/70 hover:text-cyber-primary text-sm font-mono transition-colors block mx-auto"
             >
-              注册新的管理员账号
+              免费试用注册
             </button>
             <p className="text-gray-600 text-xs font-mono">
-              员工账号由管理员创建
+              新用户可免费试用7天
             </p>
           </div>
         )}

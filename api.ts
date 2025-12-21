@@ -14,8 +14,8 @@ export const authApi = {
   login: (username: string, password: string) => 
     request('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   
-  register: (username: string, password: string) =>
-    request('/register', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  register: (username: string, password: string, inviteCode?: string) =>
+    request('/register', { method: 'POST', body: JSON.stringify({ username, password, inviteCode }) }),
   
   changePassword: (username: string, oldPassword: string, newPassword: string) =>
     request('/change-password', { method: 'POST', body: JSON.stringify({ username, oldPassword, newPassword }) })
@@ -27,6 +27,14 @@ export const staffApi = {
   add: (data: { username: string; password: string; name: string; tenantId: string }) =>
     request('/staff', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request(`/staff/${id}`, { method: 'DELETE' })
+};
+
+// 客服相关
+export const dispatcherApi = {
+  list: (tenantId: string) => request(`/dispatchers/${tenantId}`),
+  add: (data: { username: string; password: string; name: string; tenantId: string }) =>
+    request('/dispatcher', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: string) => request(`/dispatcher/${id}`, { method: 'DELETE' })
 };
 
 // 通用数据操作
@@ -79,7 +87,12 @@ export const machineTransferApi = {
 export const accountApi = {
   get: (tenantId: string) => request(`/account/${tenantId}`),
   getBills: (tenantId: string) => request(`/bills/${tenantId}`),
-  getRecharges: (tenantId: string) => request(`/recharges/${tenantId}`)
+  getRecharges: (tenantId: string) => request(`/recharges/${tenantId}`),
+  getPurchases: (tenantId: string) => request(`/account/${tenantId}/purchases`),
+  buyBase: (tenantId: string, months: number) =>
+    request(`/account/${tenantId}/buy-base`, { method: 'POST', body: JSON.stringify({ months }) }),
+  buyWindows: (tenantId: string, count: number, months: number) =>
+    request(`/account/${tenantId}/buy-windows`, { method: 'POST', body: JSON.stringify({ count, months }) })
 };
 
 // 充值相关
@@ -118,3 +131,11 @@ export const cronApi = {
 // 初始化超管
 export const initSuperAdmin = (username: string, password: string) =>
   request('/init-super-admin', { method: 'POST', body: JSON.stringify({ username, password }) });
+
+// 邀请返佣相关
+export const referralApi = {
+  validate: (inviteCode: string) => request(`/referral/validate/${inviteCode}`),
+  getInfo: (tenantId: string) => request(`/referral/${tenantId}`),
+  getInvitees: (tenantId: string) => request(`/referral/${tenantId}/invitees`),
+  getCommissions: (tenantId: string) => request(`/referral/${tenantId}/commissions`)
+};
