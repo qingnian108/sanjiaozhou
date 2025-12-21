@@ -445,6 +445,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-cyber-primary/50 bg-cyber-primary/10 font-bold">
+                        <td className="p-3 text-cyber-primary">合计</td>
+                        <td className="p-3">-</td>
+                        <td className="p-3 text-cyber-primary">{formatNumber(selectedStaffDetail.stats.totalAmount)}</td>
+                        <td className="p-3 text-red-500">{toWan(selectedStaffDetail.stats.totalLoss)}</td>
+                        <td className="p-3 text-yellow-500">
+                          {selectedStaffDetail.stats.totalAmount > 0 
+                            ? ((selectedStaffDetail.stats.totalLoss / 10000 / selectedStaffDetail.stats.totalAmount) * 100).toFixed(2)
+                            : '0'}%
+                        </td>
+                        <td className="p-3"></td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </GlassCard>
