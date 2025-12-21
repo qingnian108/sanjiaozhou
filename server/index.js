@@ -479,16 +479,34 @@ app.post('/api/transfer/respond', async (req, res) => {
     if (!transfer) return res.json({ success: false, error: '转让请求不存在' });
     
     if (accept) {
-      // 更新窗口的 tenantId，只转移窗口，不转移云机
+      // 查找原窗口
       let windowDoc = await Data.findById(transfer.windowId);
       if (!windowDoc) {
         windowDoc = await Data.findOne({ collection: 'cloudWindows', 'data.id': transfer.windowId });
       }
       
       if (windowDoc) {
+        // 查找原云机信息
+        const originalMachine = await Data.findById(windowDoc.data?.machineId);
+        
+        // 为接收方创建新的云机（复制原云机信息）
+        const newMachine = new Data({
+          collection: 'cloudMachines',
+          tenantId: transfer.toTenantId,
+          data: {
+            phone: originalMachine?.data?.phone || '转让窗口',
+            platform: originalMachine?.data?.platform || '好友转让',
+            loginType: originalMachine?.data?.loginType || 'code',
+            loginPassword: originalMachine?.data?.loginPassword
+          }
+        });
+        await newMachine.save();
+        
+        // 更新窗口：tenantId 改为接收方，machineId 改为新云机
         windowDoc.tenantId = transfer.toTenantId;
         if (windowDoc.data) {
           windowDoc.data.userId = null;  // 清除分配的员工
+          windowDoc.data.machineId = newMachine._id.toString();  // 关联到新云机
         }
         await windowDoc.save();
       }
