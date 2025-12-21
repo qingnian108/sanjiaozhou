@@ -837,7 +837,8 @@ export const StaffPortal: React.FC<Props> = ({
                 <tbody>
                   {completedOrders.map(order => {
                     const consumed = order.totalConsumed || order.amount * 10000;
-                    const lossRatio = consumed > 0 ? ((order.loss || 0) / consumed * 100).toFixed(2) : '0';
+                    const lossInWan = (order.loss || 0) / 10000;
+                    const lossRatio = order.amount > 0 ? (lossInWan / order.amount * 100).toFixed(2) : '0';
                     const income = order.amount * settings.employeeCostRate / 1000;
                     return (
                     <tr key={order.id} className="border-b border-gray-800">
@@ -845,7 +846,7 @@ export const StaffPortal: React.FC<Props> = ({
                       <td className="py-2 px-2 text-cyber-accent">{order.amount}</td>
                       <td className="py-2 px-2">{toWan(consumed)}</td>
                       <td className="py-2 px-2 text-red-400">{order.loss > 0 ? toWan(order.loss) : '-'}</td>
-                      <td className="py-2 px-2">{lossRatio}%</td>
+                      <td className="py-2 px-2">{order.loss > 0 ? `${lossRatio}%` : '-'}</td>
                       <td className="py-2 px-2 text-green-400">{income.toFixed(2)}</td>
                     </tr>
                     );

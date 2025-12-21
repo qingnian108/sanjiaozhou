@@ -1,5 +1,5 @@
 // 查询订单详情的脚本
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 mongoose.connect('mongodb://127.0.0.1:27017/sanjiaozhou')
   .then(() => console.log('MongoDB 连接成功'))

@@ -87,7 +87,12 @@ export function useFirestore(tenantId: string | null) {
     const order = orders.find(o => o.id === orderId);
     if (!order || !order.windowSnapshots) return;
 
-    const totalConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
+    // 计算当前窗口的消耗
+    const currentConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
+    // 加上中途释放窗口的消耗
+    const partialConsumed = order.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0;
+    // 总消耗 = 当前窗口消耗 + 中途释放窗口消耗
+    const totalConsumed = currentConsumed + partialConsumed;
     const orderAmountInCoins = order.amount * 10000;
     const loss = totalConsumed - orderAmountInCoins;
 
