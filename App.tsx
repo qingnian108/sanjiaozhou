@@ -74,7 +74,8 @@ const AdminApp: React.FC<{
   tenantName: string;
   onLogout: () => void; 
   onCreateStaff: (username: string, password: string, name: string) => Promise<void>;
-}> = ({ tenantId, tenantName, onLogout, onCreateStaff }) => {
+  onSuperLogin?: (superUser: any) => void;
+}> = ({ tenantId, tenantName, onLogout, onCreateStaff, onSuperLogin }) => {
   const {
     purchases,
     orders,
@@ -209,7 +210,7 @@ const AdminApp: React.FC<{
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} purchases={purchases} onRefresh={refreshData} />} />
             <Route path="/billing" element={<Billing tenantId={tenantId} tenantName={tenantName} />} />
-            <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} />} />
+            <Route path="/settings" element={<SettingsPage settings={settings} onSave={saveSettings} tenantId={tenantId} onSuperLogin={onSuperLogin} />} />
           </Routes>
         </main>
 
@@ -327,7 +328,7 @@ const App: React.FC = () => {
 
   // 管理员显示管理端
   if (isAdmin) {
-    return <AdminApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} onLogout={logout} onCreateStaff={createStaffAccount} />;
+    return <AdminApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} onLogout={logout} onCreateStaff={createStaffAccount} onSuperLogin={handleSuperLogin} />;
   }
 
   // 员工显示员工端

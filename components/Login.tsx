@@ -292,14 +292,6 @@ export const Login: React.FC<Props> = ({ onLogin, onRegisterAdmin, onChangePassw
             <p className="text-gray-600 text-xs font-mono">
               员工账号由管理员创建
             </p>
-            {onSuperLogin && (
-              <button
-                onClick={() => { setMode('superLogin'); resetForm(); }}
-                className="text-red-400/50 hover:text-red-400 text-xs font-mono transition-colors block mx-auto mt-4"
-              >
-                <Shield size={12} className="inline mr-1" /> 超级管理员入口
-              </button>
-            )}
           </div>
         )}
       </div>
