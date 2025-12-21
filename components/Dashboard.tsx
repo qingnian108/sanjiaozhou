@@ -52,17 +52,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   // 进行中订单的日期筛选
   const [pendingDateFilter, setPendingDateFilter] = useState('');
   // 订单记录的周期筛选
-  const [recordPeriod, setRecordPeriod] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('today');
+  const [recordPeriod, setRecordPeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'>('today');
   // 自定义日期范围
   const [customStartDate, setCustomStartDate] = useState(today);
   const [customEndDate, setCustomEndDate] = useState(today);
   // 删除确认
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   
+  // 获取昨天日期
+  const getYesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  };
+  
   // 获取周期的起始日期
-  const getPeriodStartDate = (period: 'today' | 'week' | 'month' | 'all' | 'custom') => {
+  const getPeriodStartDate = (period: 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom') => {
     const now = new Date();
     if (period === 'today') return today;
+    if (period === 'yesterday') return getYesterday();
     if (period === 'week') {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - now.getDay());
@@ -75,7 +83,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     return ''; // all
   };
   
-  const getPeriodEndDate = (period: 'today' | 'week' | 'month' | 'all' | 'custom') => {
+  const getPeriodEndDate = (period: 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom') => {
+    if (period === 'yesterday') return getYesterday();
     if (period === 'custom') return customEndDate;
     return today;
   };
@@ -260,6 +269,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
               <div className="flex gap-1">
                 {[
                   { key: 'today', label: '今天' },
+                  { key: 'yesterday', label: '昨天' },
                   { key: 'week', label: '本周' },
                   { key: 'month', label: '本月' },
                   { key: 'all', label: '全部' },
