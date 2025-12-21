@@ -800,7 +800,7 @@ export const StaffPortal: React.FC<Props> = ({
               </div>
             </div>
             {/* 统计汇总 */}
-            <div className="grid grid-cols-4 gap-3 p-3 bg-black/30 rounded border border-cyber-primary/20">
+            <div className="grid grid-cols-5 gap-3 p-3 bg-black/30 rounded border border-cyber-primary/20">
               <div className="text-center">
                 <div className="text-xs text-gray-400">订单数</div>
                 <div className="font-mono text-lg text-white">{filteredStats.count}</div>
@@ -812,6 +812,14 @@ export const StaffPortal: React.FC<Props> = ({
               <div className="text-center">
                 <div className="text-xs text-gray-400">总损耗(万)</div>
                 <div className="font-mono text-lg text-red-400">{toWan(filteredStats.totalLoss)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-400">总损耗比</div>
+                <div className="font-mono text-lg text-yellow-400">
+                  {filteredStats.totalAmount > 0 
+                    ? ((filteredStats.totalLoss / 10000 / filteredStats.totalAmount) * 100).toFixed(2) 
+                    : '0'}%
+                </div>
               </div>
               <div className="text-center">
                 <div className="text-xs text-gray-400">收入(¥)</div>
