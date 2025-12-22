@@ -32,6 +32,8 @@ export interface OrderRecord {
   totalConsumed?: number; // 总消耗
   completedAmount?: number; // 已完成金额（暂停时记录）
   executionHistory?: OrderExecution[]; // 执行历史（多人协作时）
+  parentOrderId?: string; // 父订单ID（暂停后恢复时关联，用于合并统计）
+  originalOrderId?: string; // 原始订单ID（整个订单链的第一个订单）
 }
 
 // 中途释放的窗口结果

@@ -174,10 +174,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   // 处理转让
   const handleTransfer = () => {
     if (!transferWindowId || !transferTargetStaffId) return;
-    if (getStaffWindowCount(transferTargetStaffId) >= 10) {
-      showAlert('无法转让', '目标员工窗口已满（最多10个）');
-      return;
-    }
     onAssignWindow(transferWindowId, transferTargetStaffId);
     showSuccess('转让成功', '窗口已转让给新员工');
     setTransferWindowId(null);
@@ -526,8 +522,8 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             >
               <option value="">选择目标员工...</option>
               {staffList.filter(s => s.role === 'staff' && s.id !== selectedStaffId).map(s => (
-                <option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>
-                  {s.name} ({getStaffWindowCount(s.id)}/10)
+                <option key={s.id} value={s.id}>
+                  {s.name} ({getStaffWindowCount(s.id)}个窗口)
                 </option>
               ))}
             </select>

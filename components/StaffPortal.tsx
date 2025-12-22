@@ -14,7 +14,7 @@ interface Props {
   windowRequests: WindowRequest[];
   onLogout: () => void;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
-  onPauseOrder: (orderId: string, completedAmount: number) => Promise<boolean>;
+  onPauseOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[]) => Promise<boolean>;
   onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
   onReleaseOrderWindow?: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onDeleteOrder?: (orderId: string) => void;
@@ -62,8 +62,9 @@ export const StaffPortal: React.FC<Props> = ({
   const [periodFilter, setPeriodFilter] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [pauseAmount, setPauseAmount] = useState('');
-  const [showPauseModal, setShowPauseModal] = useState<string | null>(null);
+  const [pauseOrderId, setPauseOrderId] = useState<string | null>(null); // 暂停订单ID
+  const [pauseAmount, setPauseAmount] = useState(''); // 暂停时已完成金额
+  const [pauseWindowBalances, setPauseWindowBalances] = useState<Record<string, string>>({}); // 暂停时窗口余额
   const [showWindowSelectModal, setShowWindowSelectModal] = useState(false);
   const [selectedWindowId, setSelectedWindowId] = useState('');
   const [releaseMyWindowId, setReleaseMyWindowId] = useState<string | null>(null);
@@ -169,21 +170,44 @@ export const StaffPortal: React.FC<Props> = ({
       : '验证码登录';
   };
 
+  // 暂停订单对象
+  const pauseOrder = pauseOrderId ? pendingOrders.find(o => o.id === pauseOrderId) : null;
+
   // 处理暂停订单
-  const handlePauseOrder = async (orderId: string) => {
+  const handlePauseOrder = async () => {
+    if (!pauseOrderId || !pauseOrder) return;
+    
     const amount = parseFloat(pauseAmount);
     if (isNaN(amount) || amount <= 0) {
       showAlert('输入错误', '请输入有效的已完成金额');
       return;
     }
-    const success = await onPauseOrder(orderId, amount);
+    if (amount > pauseOrder.amount) {
+      showAlert('输入错误', '已完成金额不能大于订单金额');
+      return;
+    }
+
+    // 构建窗口结果
+    const results: WindowResult[] = myWindows.map(window => {
+      const endBalance = pauseWindowBalances[window.id] 
+        ? parseFloat(pauseWindowBalances[window.id]) * 10000
+        : window.goldBalance;
+      return {
+        windowId: window.id,
+        endBalance,
+        consumed: window.goldBalance - endBalance
+      };
+    });
+
+    const success = await onPauseOrder(pauseOrderId, amount, results);
     if (success) {
-      showSuccess('操作成功', '订单已暂停');
+      showSuccess('操作成功', '订单已暂停，剩余部分已创建新订单');
     } else {
       showAlert('操作失败', '暂停订单失败，请重试');
     }
-    setShowPauseModal(null);
+    setPauseOrderId(null);
     setPauseAmount('');
+    setPauseWindowBalances({});
   };
 
   // 处理申请窗口
@@ -345,7 +369,14 @@ export const StaffPortal: React.FC<Props> = ({
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setShowPauseModal(order.id)}
+                        onClick={() => {
+                          setPauseOrderId(order.id);
+                          setPauseAmount('');
+                          // 初始化暂停窗口余额
+                          const balances: Record<string, string> = {};
+                          myWindows.forEach(w => { balances[w.id] = ''; });
+                          setPauseWindowBalances(balances);
+                        }}
                         className="px-3 py-2 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-1 text-sm"
                       >
                         <Pause size={14} /> 暂停
@@ -369,24 +400,89 @@ export const StaffPortal: React.FC<Props> = ({
           </GlassCard>
         )}
 
-        {/* 暂停订单弹窗 */}
-        {showPauseModal && (
+        {/* 暂停订单弹窗 - 需要填写窗口余额 */}
+        {pauseOrder && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-md w-full">
-              <h3 className="text-xl font-mono text-yellow-400 mb-4">暂停订单</h3>
-              <p className="text-gray-400 text-sm mb-4">请输入已完成的金额（万），剩余部分可以稍后继续或转给其他员工</p>
-              <input
-                type="number"
-                placeholder="已完成金额（万）"
-                value={pauseAmount}
-                onChange={e => setPauseAmount(e.target.value)}
-                className="w-full bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2 mb-4"
-              />
+            <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h3 className="text-xl font-mono text-yellow-400 mb-4">暂停订单 - {pauseOrder.date}</h3>
+              
+              <div className="mb-4 p-3 bg-black/30 rounded">
+                <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent text-lg">{pauseOrder.amount}</span> 万</div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-yellow-400 text-sm font-mono mb-2">已完成金额（万）</label>
+                <input
+                  type="number"
+                  placeholder="输入已完成的金额"
+                  value={pauseAmount}
+                  onChange={e => setPauseAmount(e.target.value)}
+                  className="w-full bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2"
+                />
+                {pauseAmount && parseFloat(pauseAmount) > 0 && (
+                  <div className="text-sm text-gray-400 mt-2">
+                    剩余金额: <span className="text-orange-400">{pauseOrder.amount - parseFloat(pauseAmount)}</span> 万（将创建新订单）
+                  </div>
+                )}
+              </div>
+
+              <div className="text-sm text-yellow-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）:</div>
+              <div className="space-y-3 mb-6">
+                {myWindows.map(window => {
+                  const inputValue = pauseWindowBalances[window.id] || '';
+                  const startBalance = window.goldBalance;
+                  const endBalance = inputValue ? parseFloat(inputValue) * 10000 : startBalance;
+                  const consumed = startBalance - endBalance;
+                  return (
+                    <div key={window.id} className="bg-black/30 p-3 rounded border border-yellow-500/20">
+                      <div className="flex justify-between items-center mb-2">
+                        <div>
+                          <span className="font-mono">#{window.windowNumber}</span>
+                          <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
+                        </div>
+                        <div className="text-xs text-gray-400">当前余额: {formatWan(startBalance)}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          placeholder={`${toWan(startBalance)} 万 (不填则无消耗)`}
+                          value={inputValue}
+                          onChange={e => setPauseWindowBalances({...pauseWindowBalances, [window.id]: e.target.value})}
+                          className="flex-1 bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2"
+                        />
+                        <div className={`text-sm font-mono min-w-[70px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                          {formatWan(consumed)}
+                        </div>
+                        <button
+                          onClick={() => setPauseWindowBalances({...pauseWindowBalances, [window.id]: String(startBalance / 10000)})}
+                          className="px-2 py-2 text-xs font-mono border border-green-500 text-green-400 hover:bg-green-500/20"
+                        >
+                          未使用
+                        </button>
+                        <button
+                          onClick={() => setPauseWindowBalances({...pauseWindowBalances, [window.id]: '0'})}
+                          className="px-2 py-2 text-xs font-mono border border-orange-500 text-orange-400 hover:bg-orange-500/20"
+                        >
+                          消耗完
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="flex gap-3">
-                <button onClick={() => { setShowPauseModal(null); setPauseAmount(''); }} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800">
+                <button 
+                  onClick={() => { setPauseOrderId(null); setPauseAmount(''); setPauseWindowBalances({}); }} 
+                  className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800"
+                >
                   取消
                 </button>
-                <button onClick={() => handlePauseOrder(showPauseModal)} className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30">
+                <button 
+                  onClick={handlePauseOrder} 
+                  disabled={!pauseAmount || parseFloat(pauseAmount) <= 0}
+                  className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30 disabled:opacity-50"
+                >
                   确认暂停
                 </button>
               </div>
@@ -589,6 +685,9 @@ export const StaffPortal: React.FC<Props> = ({
             <div className="flex items-center gap-2 text-cyber-primary">
               <Monitor size={20} />
               <h2 className="font-mono text-lg">我的云机窗口</h2>
+              <span className="text-cyber-accent font-mono text-lg ml-2">
+                总额: {formatWan(myWindows.reduce((sum, w) => sum + w.goldBalance, 0))}
+              </span>
               {myKook && (
                 <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30">
                   Kook: {myKook.phone} ({myKook.nickname || '无昵称'})

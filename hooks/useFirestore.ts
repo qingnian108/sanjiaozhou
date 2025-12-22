@@ -140,26 +140,71 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  const pauseOrder = async (orderId: string, completedAmount: number): Promise<boolean> => {
+  const pauseOrder = async (orderId: string, completedAmount: number, windowResults: WindowResult[]): Promise<boolean> => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return false;
 
     const currentStaff = staffList.find(s => s.id === order.staffId);
     const staffName = currentStaff?.name || '未知';
-    const previousCompleted = order.executionHistory?.reduce((sum, e) => sum + e.amount, 0) || 0;
-    const thisExecutionAmount = completedAmount - previousCompleted;
+    
+    // 计算当前窗口的消耗
+    const currentConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
+    // 加上中途释放窗口的消耗
+    const partialConsumed = order.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0;
+    // 总消耗
+    const totalConsumed = currentConsumed + partialConsumed;
+    const orderAmountInCoins = completedAmount * 10000;
+    const loss = totalConsumed - orderAmountInCoins;
 
-    const newExecution = {
+    // 1. 完成当前订单（已完成部分）
+    const executionHistory = [...(order.executionHistory || []), {
       staffId: order.staffId,
       staffName,
-      amount: thisExecutionAmount > 0 ? thisExecutionAmount : completedAmount,
+      amount: completedAmount,
       startTime: order.executionHistory?.length ? new Date().toISOString() : order.date,
       endTime: new Date().toISOString()
-    };
+    }];
 
-    const executionHistory = [...(order.executionHistory || []), newExecution];
+    await dataApi.update('orders', orderId, {
+      ...order,
+      amount: completedAmount, // 订单金额改为已完成金额
+      status: 'completed',
+      windowResults,
+      totalConsumed,
+      loss: loss > 0 ? loss : 0,
+      executionHistory
+    });
 
-    await dataApi.update('orders', orderId, { ...order, status: 'paused', completedAmount, executionHistory });
+    // 2. 更新窗口余额
+    for (const result of windowResults) {
+      const window = cloudWindows.find(w => w.id === result.windowId);
+      if (window) {
+        if (result.endBalance <= 0) {
+          await dataApi.delete('cloudWindows', result.windowId);
+        } else {
+          await dataApi.update('cloudWindows', result.windowId, { ...window, goldBalance: result.endBalance });
+        }
+      }
+    }
+
+    // 3. 创建新的暂停订单（剩余部分）
+    const remainingAmount = order.amount - completedAmount;
+    if (remainingAmount > 0 && tenantId) {
+      const originalOrderId = order.originalOrderId || order.id;
+      await dataApi.add('orders', {
+        date: new Date().toISOString().split('T')[0],
+        staffId: order.staffId,
+        amount: remainingAmount,
+        loss: 0,
+        feePercent: order.feePercent,
+        unitPrice: order.unitPrice,
+        status: 'paused',
+        parentOrderId: order.id,
+        originalOrderId,
+        tenantId
+      });
+    }
+
     await loadData();
     return true;
   };
@@ -168,11 +213,21 @@ export function useFirestore(tenantId: string | null) {
     const order = orders.find(o => o.id === orderId);
     if (!order) return false;
 
-    const updateData: any = { ...order, status: 'pending' };
-    if (newStaffId && newStaffId !== order.staffId) {
+    const isTransfer = newStaffId && newStaffId !== order.staffId;
+    
+    const updateData: any = { 
+      ...order, 
+      status: 'pending',
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    if (isTransfer) {
+      // 转派：清除 parentOrderId，变成独立订单
       updateData.staffId = newStaffId;
-      updateData.remainingAmount = order.amount - (order.completedAmount || 0);
+      updateData.parentOrderId = null;
+      updateData.originalOrderId = null;
     }
+    // 恢复（同一员工）：保留 parentOrderId，最后合并统计
 
     await dataApi.update('orders', orderId, updateData);
     await loadData();

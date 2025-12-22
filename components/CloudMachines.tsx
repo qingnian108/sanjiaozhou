@@ -105,8 +105,8 @@ export const CloudMachines: React.FC<Props> = ({
     onProcessRequest(requestId, false, adminId);
   };
 
-  // 默认展开所有云机
-  const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
+  // 默认折叠所有云机
+  const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
   const [windowNumber, setWindowNumber] = useState('');
   const [windowGold, setWindowGold] = useState('');
   const [windowCost, setWindowCost] = useState(''); // 添加窗口时的采购成本
@@ -298,13 +298,13 @@ export const CloudMachines: React.FC<Props> = ({
   };
   
   const getStaffBgColor = (staffId: string | null) => {
-    if (!staffId) return 'bg-green-500/10';
+    if (!staffId) return 'bg-white/5';
     const index = staffList.findIndex(s => s.id === staffId);
     return staffBgColors[index % staffBgColors.length];
   };
   
   const getStaffBorderColor = (staffId: string | null) => {
-    if (!staffId) return 'border-green-500/50';
+    if (!staffId) return 'border-white/30';
     const index = staffList.findIndex(s => s.id === staffId);
     return staffBorderColors[index % staffBorderColors.length];
   };
@@ -458,7 +458,7 @@ export const CloudMachines: React.FC<Props> = ({
                 const machineWindows = getMachineWindows(machine.id);
                 const totalGold = getMachineTotalGold(machine.id);
                 const occupiedCount = machineWindows.filter(w => w.userId).length;
-                const isExpanded = !collapsedMachines.has(machine.id);
+                const isExpanded = expandedMachines.has(machine.id);
                 const isEditing = editingMachineId === machine.id;
 
                 return (
@@ -466,10 +466,10 @@ export const CloudMachines: React.FC<Props> = ({
                     <div className="flex justify-between items-center p-4 bg-cyber-panel/50 cursor-pointer hover:bg-cyber-panel/80"
                       onClick={() => {
                         if (isEditing) return;
-                        const newSet = new Set(collapsedMachines);
-                        if (isExpanded) newSet.add(machine.id);
-                        else newSet.delete(machine.id);
-                        setCollapsedMachines(newSet);
+                        const newSet = new Set(expandedMachines);
+                        if (isExpanded) newSet.delete(machine.id);
+                        else newSet.add(machine.id);
+                        setExpandedMachines(newSet);
                       }}>
                       <div className="flex items-center gap-4">
                         <Server className="text-cyber-primary" size={28} />
@@ -629,7 +629,7 @@ export const CloudMachines: React.FC<Props> = ({
                               <div key={window.id} className={`p-4 rounded border ${getStaffBorderColor(window.userId)} ${getStaffBgColor(window.userId)}`}>
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
-                                    <Circle size={10} className={window.userId ? `${getStaffColor(window.userId)} fill-current` : 'text-green-400 fill-green-400'} />
+                                    <Circle size={10} className={window.userId ? `${getStaffColor(window.userId)} fill-current` : 'text-white/60 fill-white/60'} />
                                     {editingWindowId === window.id ? (
                                       <input
                                         type="text"
@@ -679,9 +679,9 @@ export const CloudMachines: React.FC<Props> = ({
                                   </div>
                                 ) : (
                                   <select className="w-full bg-black/40 border border-cyber-primary/30 text-sm p-2 rounded" value=""
-                                    onChange={e => { if (e.target.value) { const staffId = e.target.value; if (getStaffWindowCount(staffId) >= 10) { showAlert('无法分配', '该员工已使用10个窗口'); return; } onAssignWindow(window.id, staffId); } }}>
+                                    onChange={e => { if (e.target.value) { onAssignWindow(window.id, e.target.value); } }}>
                                     <option value="">分配给...</option>
-                                    {staffList.map(s => (<option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>{s.name} ({getStaffWindowCount(s.id)}/10)</option>))}
+                                    {staffList.map(s => (<option key={s.id} value={s.id}>{s.name} ({getStaffWindowCount(s.id)}个)</option>))}
                                   </select>
                                 )}
                               </div>
@@ -938,8 +938,8 @@ export const CloudMachines: React.FC<Props> = ({
             >
               <option value="">选择目标员工...</option>
               {staffList.filter(s => s.id !== windows.find(w => w.id === transferWindowId)?.userId).map(s => (
-                <option key={s.id} value={s.id} disabled={getStaffWindowCount(s.id) >= 10}>
-                  {s.name} ({getStaffWindowCount(s.id)}/10)
+                <option key={s.id} value={s.id}>
+                  {s.name} ({getStaffWindowCount(s.id)}个)
                 </option>
               ))}
             </select>

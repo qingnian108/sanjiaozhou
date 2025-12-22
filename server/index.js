@@ -882,26 +882,54 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       
       // 计算这批哈夫币的成本
       const transferCost = transfer.totalGold * avgCostPerGold;
-      // 计算利润 = 转让价格 - 成本
-      const profit = transfer.price - transferCost;
       
-      // 为接收方创建新的云机记录
-      const newMachine = new Data({
-        collection: 'cloudMachines',
-        tenantId: transfer.toTenantId,
-        data: {
-          phone: transfer.machineInfo?.phone || '转让云机',
-          platform: transfer.machineInfo?.platform || '好友转让',
-          loginType: transfer.machineInfo?.loginType || 'code',
-          loginPassword: transfer.machineInfo?.loginPassword || ''
+      // 按原云机分组窗口，为每个原云机创建一个新云机
+      const windowsByMachine = {};
+      for (const windowInfo of (transfer.windowsInfo || [])) {
+        const machineId = windowInfo.machineId || transfer.machineId;
+        if (!windowsByMachine[machineId]) {
+          windowsByMachine[machineId] = {
+            machineInfo: windowInfo.machineInfo || transfer.machineInfo,
+            windows: []
+          };
         }
-      });
-      await newMachine.save();
-      const newMachineId = newMachine._id.toString();
-      console.log('Created new machine for receiver:', newMachineId);
+        windowsByMachine[machineId].windows.push(windowInfo);
+      }
+      
+      // 如果 windowsInfo 没有 machineId，使用旧逻辑（所有窗口归到一个云机）
+      if (Object.keys(windowsByMachine).length === 0) {
+        windowsByMachine[transfer.machineId] = {
+          machineInfo: transfer.machineInfo,
+          windows: transfer.windowsInfo || []
+        };
+      }
+      
+      // 为每个原云机创建新云机，并更新窗口
+      const machineIdMap = {}; // 原云机ID -> 新云机ID
+      for (const [originalMachineId, machineData] of Object.entries(windowsByMachine)) {
+        const info = machineData.machineInfo || transfer.machineInfo || {};
+        const newMachine = new Data({
+          collection: 'cloudMachines',
+          tenantId: transfer.toTenantId,
+          data: {
+            phone: info.phone || '转让云机',
+            platform: info.platform || '好友转让',
+            loginType: info.loginType || 'code',
+            loginPassword: info.loginPassword || ''
+          }
+        });
+        await newMachine.save();
+        machineIdMap[originalMachineId] = newMachine._id.toString();
+        console.log('Created new machine for receiver:', newMachine._id.toString(), 'from original:', originalMachineId);
+      }
       
       // 更新窗口的 tenantId 和 machineId
-      for (const windowId of transfer.windowIds) {
+      for (let i = 0; i < transfer.windowIds.length; i++) {
+        const windowId = transfer.windowIds[i];
+        const windowInfo = transfer.windowsInfo?.[i] || {};
+        const originalMachineId = windowInfo.machineId || transfer.machineId;
+        const newMachineId = machineIdMap[originalMachineId] || Object.values(machineIdMap)[0];
+        
         let windowDoc = await Data.findById(windowId);
         if (!windowDoc) {
           windowDoc = await Data.findOne({ collection: 'cloudWindows', 'data.id': windowId });
@@ -911,10 +939,10 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
           windowDoc.tenantId = transfer.toTenantId;
           if (windowDoc.data) {
             windowDoc.data.userId = null;
-            windowDoc.data.machineId = newMachineId;  // 关联到新云机
+            windowDoc.data.machineId = newMachineId;
           }
           await windowDoc.save();
-          console.log('Window transferred:', windowId);
+          console.log('Window transferred:', windowId, 'to machine:', newMachineId);
         } else {
           console.log('Window not found:', windowId);
         }
@@ -929,7 +957,7 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
           amount: -transfer.totalGold,  // 负数表示卖出
           cost: -transfer.price,        // 负数表示收入
           type: 'transfer_out',
-          note: `转让云机给 ${transfer.toTenantName}`
+          note: `转让${transfer.windowIds.length}个窗口给 ${transfer.toTenantName}`
         }
       });
       await sellRecord.save();
@@ -943,7 +971,7 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
           amount: transfer.totalGold,
           cost: transfer.price,
           type: 'transfer_in',
-          note: `从 ${transfer.fromTenantName} 接收云机`
+          note: `从 ${transfer.fromTenantName} 接收${transfer.windowIds.length}个窗口`
         }
       });
       await purchaseData.save();

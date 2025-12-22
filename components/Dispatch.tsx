@@ -43,7 +43,8 @@ export const Dispatch: React.FC<Props> = ({
     date: today,
     staffId: '',
     amount: '',
-    totalPrice: '' // 总价（元）
+    totalPrice: '', // 总价（元）
+    unitPrice: ''   // 单价（元/千万）
   });
 
   // 选中的窗口ID列表
@@ -253,11 +254,6 @@ export const Dispatch: React.FC<Props> = ({
 
   // 分配空闲窗口给当前员工
   const handleAssignFreeWindow = (windowId: string) => {
-    const currentCount = getStaffWindows(orderForm.staffId).length;
-    if (currentCount >= 10) {
-      showAlert('无法添加', '该员工已有10个窗口，无法继续添加');
-      return;
-    }
     onAssignWindow(windowId, orderForm.staffId);
   };
 
@@ -305,8 +301,15 @@ export const Dispatch: React.FC<Props> = ({
 
     const amount = parseFloat(orderForm.amount);
     const totalPrice = parseFloat(orderForm.totalPrice);
-    // 自动计算单价：总价 / (金额/1000) = 元/千万
-    const unitPrice = totalPrice / (amount / 1000);
+    const inputUnitPrice = parseFloat(orderForm.unitPrice);
+    
+    // 单价优先级：输入的单价 > 从总价计算 > 默认设置
+    let unitPrice = settings.orderUnitPrice;
+    if (!isNaN(inputUnitPrice) && inputUnitPrice > 0) {
+      unitPrice = inputUnitPrice;
+    } else if (!isNaN(totalPrice) && totalPrice > 0 && amount > 0) {
+      unitPrice = totalPrice / (amount / 1000);
+    }
 
     onAddOrder({
       date: orderForm.date,
@@ -314,11 +317,11 @@ export const Dispatch: React.FC<Props> = ({
       amount,
       loss: 0,
       feePercent: settings.defaultFeePercent, // 使用设置中的手续费
-      unitPrice: isNaN(unitPrice) ? settings.orderUnitPrice : unitPrice,
+      unitPrice,
       status: 'pending'
     }, windowSnapshots);
     
-    setOrderForm({ ...orderForm, amount: '', totalPrice: '' });
+    setOrderForm({ ...orderForm, amount: '', totalPrice: '', unitPrice: '' });
     setSelectedWindowIds([]);
     showSuccess("派单成功", "订单已派发，员工可在员工端完成订单");
   };
@@ -707,7 +710,16 @@ export const Dispatch: React.FC<Props> = ({
               type="number"
               step="0.01"
               value={orderForm.amount}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, amount: e.target.value})}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const amount = e.target.value;
+                const newForm = { ...orderForm, amount };
+                // 如果有单价，自动计算总价
+                if (orderForm.unitPrice && amount) {
+                  const totalPrice = (parseFloat(amount) / 1000) * parseFloat(orderForm.unitPrice);
+                  newForm.totalPrice = isNaN(totalPrice) ? '' : totalPrice.toFixed(2);
+                }
+                setOrderForm(newForm);
+              }}
               placeholder="输入金额"
               required
             />
@@ -716,19 +728,35 @@ export const Dispatch: React.FC<Props> = ({
               type="number"
               step="0.01"
               value={orderForm.totalPrice}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, totalPrice: e.target.value})}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const totalPrice = e.target.value;
+                const newForm = { ...orderForm, totalPrice };
+                // 如果有金额，自动计算单价
+                if (orderForm.amount && totalPrice) {
+                  const unitPrice = parseFloat(totalPrice) / (parseFloat(orderForm.amount) / 1000);
+                  newForm.unitPrice = isNaN(unitPrice) ? '' : unitPrice.toFixed(2);
+                }
+                setOrderForm(newForm);
+              }}
               placeholder="输入总价"
-              required
             />
-            {/* 自动计算的单价（只读） */}
-            <div>
-              <label className="block text-cyber-primary text-xs font-mono mb-2 uppercase tracking-wider">{`> 单价 (元/千万)`}</label>
-              <div className="bg-black/40 border border-cyber-primary/30 text-cyber-accent font-mono px-3 py-2 h-[42px] flex items-center">
-                {orderForm.amount && orderForm.totalPrice 
-                  ? (parseFloat(orderForm.totalPrice) / (parseFloat(orderForm.amount) / 1000)).toFixed(2)
-                  : '--'}
-              </div>
-            </div>
+            <CyberInput
+              label="单价 (元/千万)"
+              type="number"
+              step="0.01"
+              value={orderForm.unitPrice}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const unitPrice = e.target.value;
+                const newForm = { ...orderForm, unitPrice };
+                // 如果有金额，自动计算总价
+                if (orderForm.amount && unitPrice) {
+                  const totalPrice = (parseFloat(orderForm.amount) / 1000) * parseFloat(unitPrice);
+                  newForm.totalPrice = isNaN(totalPrice) ? '' : totalPrice.toFixed(2);
+                }
+                setOrderForm(newForm);
+              }}
+              placeholder={`默认 ${settings.orderUnitPrice}`}
+            />
           </div>
 
           {/* 员工选择 */}
