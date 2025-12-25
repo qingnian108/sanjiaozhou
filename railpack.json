@@ -1,0 +1,5 @@
+{
+  "provider": "node",
+  "start": "node server/index.js",
+  "install": "npm ci --omit=dev"
+}
