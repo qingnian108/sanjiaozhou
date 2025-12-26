@@ -139,3 +139,14 @@ export const referralApi = {
   getInvitees: (tenantId: string) => request(`/referral/${tenantId}/invitees`),
   getCommissions: (tenantId: string) => request(`/referral/${tenantId}/commissions`)
 };
+
+// 联系定制相关
+export const contactApi = {
+  submit: (data: { tenantId: string; tenantName: string; contact: string; message: string }) =>
+    request('/contact-request', { method: 'POST', body: JSON.stringify(data) }),
+  list: () => request('/contact-requests'),
+  update: (id: string, status: string) =>
+    request(`/contact-request/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  delete: (id: string) =>
+    request(`/contact-request/${id}`, { method: 'DELETE' })
+};

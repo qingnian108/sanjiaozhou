@@ -15,7 +15,7 @@ interface Props {
   onDeleteWindow: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onResumeOrder: (orderId: string, newStaffId?: string) => Promise<boolean>;
-  onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
+  onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
   onReleaseOrderWindow: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onAddWindowToOrder: (orderId: string, windowId: string) => Promise<void>;
   onDeleteOrder: (orderId: string) => void;
@@ -44,7 +44,8 @@ export const Dispatch: React.FC<Props> = ({
     staffId: '',
     amount: '',
     totalPrice: '', // 总价（元）
-    unitPrice: ''   // 单价（元/千万）
+    unitPrice: '',   // 单价（元/千万）
+    bossStartBalance: '' // 老板账号初始余额（万）
   });
 
   // 选中的窗口ID列表
@@ -128,7 +129,7 @@ export const Dispatch: React.FC<Props> = ({
     if (success) {
       showSuccess('操作成功', '订单已恢复，员工可继续处理');
     } else {
-      showAlert('操作失败', '恢复订单失败，请重试');
+      showAlert('操作失败', '该员工已有进行中的订单，请先完成或暂停后再恢复');
     }
   };
 
@@ -139,7 +140,7 @@ export const Dispatch: React.FC<Props> = ({
     if (success) {
       showSuccess('操作成功', '订单已转派给新员工');
     } else {
-      showAlert('操作失败', '转派订单失败，请重试');
+      showAlert('操作失败', '该员工已有进行中的订单，请选择其他员工或先完成其当前订单');
     }
     setTransferOrderId(null);
     setTransferStaffId('');
@@ -153,11 +154,16 @@ export const Dispatch: React.FC<Props> = ({
       showAlert('无法完成', '该员工当前没有分配的窗口');
       return;
     }
+
+    // 检查是否所有窗口都填写了余额
+    const missingBalances = staffWindows.filter(w => !windowBalances[w.id] && windowBalances[w.id] !== '0');
+    if (missingBalances.length > 0) {
+      showAlert('请填写完整', `请填写所有窗口的剩余余额（还有 ${missingBalances.length} 个窗口未填写）`);
+      return;
+    }
     
     const results: WindowResult[] = staffWindows.map(window => {
-      const endBalance = windowBalances[window.id] 
-        ? parseFloat(windowBalances[window.id]) * 10000
-        : window.goldBalance; // 不填则默认无消耗
+      const endBalance = parseFloat(windowBalances[window.id]) * 10000;
       return {
         windowId: window.id,
         endBalance,
@@ -318,10 +324,11 @@ export const Dispatch: React.FC<Props> = ({
       loss: 0,
       feePercent: settings.defaultFeePercent, // 使用设置中的手续费
       unitPrice,
-      status: 'pending'
+      status: 'pending',
+      bossStartBalance: orderForm.bossStartBalance ? parseFloat(orderForm.bossStartBalance) * 10000 : undefined
     }, windowSnapshots);
     
-    setOrderForm({ ...orderForm, amount: '', totalPrice: '', unitPrice: '' });
+    setOrderForm({ ...orderForm, amount: '', totalPrice: '', unitPrice: '', bossStartBalance: '' });
     setSelectedWindowIds([]);
     showSuccess("派单成功", "订单已派发，员工可在员工端完成订单");
   };
@@ -756,6 +763,18 @@ export const Dispatch: React.FC<Props> = ({
                 setOrderForm(newForm);
               }}
               placeholder={`默认 ${settings.orderUnitPrice}`}
+            />
+          </div>
+
+          {/* 老板账号余额 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CyberInput
+              label="老板账号余额 (万)"
+              type="number"
+              step="0.01"
+              value={orderForm.bossStartBalance}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, bossStartBalance: e.target.value})}
+              placeholder="打之前的账号余额（选填）"
             />
           </div>
 

@@ -14,7 +14,7 @@ interface StaffManagerProps {
   onDeleteStaff: (id: string) => void;
   onDeleteOrder: (id: string) => void;
   onAssignWindow: (windowId: string, userId: string | null) => void;
-  onCompleteOrder?: (orderId: string, windowResults: WindowResult[]) => void;
+  onCompleteOrder?: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
   onAddWindowToOrder?: (orderId: string, windowId: string) => Promise<void>;
   onLoginAsStaff?: (staffId: string, staffName: string) => void;
   isDispatcher?: boolean;
@@ -136,11 +136,16 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
       showAlert('无法完成', '该员工当前没有分配的窗口');
       return;
     }
+
+    // 检查是否所有窗口都填写了余额
+    const missingBalances = staffWindows.filter(w => !windowBalances[w.id] && windowBalances[w.id] !== '0');
+    if (missingBalances.length > 0) {
+      showAlert('请填写完整', `请填写所有窗口的剩余余额（还有 ${missingBalances.length} 个窗口未填写）`);
+      return;
+    }
     
     const results: WindowResult[] = staffWindows.map(window => {
-      const endBalance = windowBalances[window.id] 
-        ? parseFloat(windowBalances[window.id]) * 10000
-        : window.goldBalance; // 不填则默认无消耗
+      const endBalance = parseFloat(windowBalances[window.id]) * 10000;
       return {
         windowId: window.id,
         endBalance,

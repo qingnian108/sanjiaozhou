@@ -110,11 +110,13 @@ export const CloudMachines: React.FC<Props> = ({
   const [windowNumber, setWindowNumber] = useState('');
   const [windowGold, setWindowGold] = useState('');
   const [windowCost, setWindowCost] = useState(''); // 添加窗口时的采购成本
+  const [windowUnitPrice, setWindowUnitPrice] = useState(''); // 单价（元/千万）
   
   // 云机管理中的批量添加
   const [machBatchNames, setMachBatchNames] = useState('');
   const [machBatchGold, setMachBatchGold] = useState('');
   const [machBatchCost, setMachBatchCost] = useState('');
+  const [machBatchUnitPrice, setMachBatchUnitPrice] = useState(''); // 单价（元/千万）
   
   // 云机采购表单
   const today = new Date().toISOString().split('T')[0];
@@ -123,6 +125,7 @@ export const CloudMachines: React.FC<Props> = ({
   const [purchaseLoginType, setPurchaseLoginType] = useState<'password' | 'code'>('code');
   const [purchaseLoginPassword, setPurchaseLoginPassword] = useState('');
   const [purchaseCost, setPurchaseCost] = useState('');
+  const [purchaseUnitPrice, setPurchaseUnitPrice] = useState(''); // 单价（元/千万）
   const [purchaseWindows, setPurchaseWindows] = useState<NewWindow[]>([{ windowNumber: '', goldBalance: '' }]);
   
   // 批量添加窗口
@@ -173,6 +176,28 @@ export const CloudMachines: React.FC<Props> = ({
 
   // 计算总哈夫币
   const totalGoldInPurchase = purchaseWindows.reduce((sum, w) => sum + (parseFloat(w.goldBalance) || 0), 0);
+  
+  // 云机采购 - 总价变化时计算单价
+  const handlePurchaseCostChange = (value: string) => {
+    setPurchaseCost(value);
+    const totalGoldWan = totalGoldInPurchase;
+    const cost = parseFloat(value) || 0;
+    if (totalGoldWan > 0 && cost > 0) {
+      const unitPrice = cost / (totalGoldWan / 1000); // 元/千万
+      setPurchaseUnitPrice(unitPrice.toFixed(2));
+    }
+  };
+  
+  // 云机采购 - 单价变化时计算总价
+  const handlePurchaseUnitPriceChange = (value: string) => {
+    setPurchaseUnitPrice(value);
+    const totalGoldWan = totalGoldInPurchase;
+    const unitPrice = parseFloat(value) || 0;
+    if (totalGoldWan > 0 && unitPrice > 0) {
+      const cost = unitPrice * (totalGoldWan / 1000); // 总价
+      setPurchaseCost(cost.toFixed(2));
+    }
+  };
 
   // 提交云机采购
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
@@ -217,6 +242,7 @@ export const CloudMachines: React.FC<Props> = ({
     setPurchaseLoginType('code');
     setPurchaseLoginPassword('');
     setPurchaseCost('');
+    setPurchaseUnitPrice('');
     setPurchaseWindows([{ windowNumber: '', goldBalance: '' }]);
     setActiveTab('machines');
     showSuccess('采购成功', '云机采购成功！');
@@ -237,6 +263,29 @@ export const CloudMachines: React.FC<Props> = ({
     setWindowNumber('');
     setWindowGold('');
     setWindowCost('');
+    setWindowUnitPrice('');
+  };
+  
+  // 单个窗口添加 - 总价变化时计算单价
+  const handleWindowCostChange = (value: string) => {
+    setWindowCost(value);
+    const goldWan = parseFloat(windowGold) || 0;
+    const cost = parseFloat(value) || 0;
+    if (goldWan > 0 && cost > 0) {
+      const unitPrice = cost / (goldWan / 1000); // 元/千万
+      setWindowUnitPrice(unitPrice.toFixed(2));
+    }
+  };
+  
+  // 单个窗口添加 - 单价变化时计算总价
+  const handleWindowUnitPriceChange = (value: string) => {
+    setWindowUnitPrice(value);
+    const goldWan = parseFloat(windowGold) || 0;
+    const unitPrice = parseFloat(value) || 0;
+    if (goldWan > 0 && unitPrice > 0) {
+      const cost = unitPrice * (goldWan / 1000); // 总价
+      setWindowCost(cost.toFixed(2));
+    }
   };
   
   // 批量添加窗口到已有云机
@@ -265,7 +314,34 @@ export const CloudMachines: React.FC<Props> = ({
     setMachBatchNames('');
     setMachBatchGold('');
     setMachBatchCost('');
+    setMachBatchUnitPrice('');
     showSuccess('添加成功', `已添加 ${names.length} 个窗口`);
+  };
+  
+  // 批量添加 - 总价变化时计算单价
+  const handleBatchCostChange = (value: string) => {
+    setMachBatchCost(value);
+    const goldWan = parseFloat(machBatchGold) || 0;
+    const names = machBatchNames.split(/[,，\s\n]+/).filter(n => n.trim());
+    const totalGoldWan = goldWan * names.length;
+    const cost = parseFloat(value) || 0;
+    if (totalGoldWan > 0 && cost > 0) {
+      const unitPrice = cost / (totalGoldWan / 1000); // 元/千万
+      setMachBatchUnitPrice(unitPrice.toFixed(2));
+    }
+  };
+  
+  // 批量添加 - 单价变化时计算总价
+  const handleBatchUnitPriceChange = (value: string) => {
+    setMachBatchUnitPrice(value);
+    const goldWan = parseFloat(machBatchGold) || 0;
+    const names = machBatchNames.split(/[,，\s\n]+/).filter(n => n.trim());
+    const totalGoldWan = goldWan * names.length;
+    const unitPrice = parseFloat(value) || 0;
+    if (totalGoldWan > 0 && unitPrice > 0) {
+      const cost = unitPrice * (totalGoldWan / 1000); // 总价
+      setMachBatchCost(cost.toFixed(2));
+    }
   };
 
   const getStaffName = (staffId: string | null) => {
@@ -371,7 +447,9 @@ export const CloudMachines: React.FC<Props> = ({
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchaseLoginPassword(e.target.value)} />
               )}
               <CyberInput label="采购总价 (元)" type="number" step="0.01" value={purchaseCost} placeholder="输入总价"
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPurchaseCost(e.target.value)} />
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePurchaseCostChange(e.target.value)} />
+              <CyberInput label="单价 (元/千万)" type="number" step="0.01" value={purchaseUnitPrice} placeholder="输入单价"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePurchaseUnitPriceChange(e.target.value)} />
             </div>
 
             <div className="border border-cyber-accent/30 p-4 rounded">
@@ -585,7 +663,12 @@ export const CloudMachines: React.FC<Props> = ({
                           </div>
                           <div className="flex-1">
                             <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 采购成本 (元)`}</label>
-                            <input type="number" step="0.01" value={windowCost} onChange={e => setWindowCost(e.target.value)} placeholder="输入成本"
+                            <input type="number" step="0.01" value={windowCost} onChange={e => handleWindowCostChange(e.target.value)} placeholder="输入成本"
+                              className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 单价 (元/千万)`}</label>
+                            <input type="number" step="0.01" value={windowUnitPrice} onChange={e => handleWindowUnitPriceChange(e.target.value)} placeholder="输入单价"
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
                           <button onClick={() => handleAddWindow(machine.id)} disabled={!windowNumber}
@@ -603,14 +686,19 @@ export const CloudMachines: React.FC<Props> = ({
                                 onChange={e => setMachBatchNames(e.target.value)}
                                 className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                             </div>
-                            <div className="w-28">
+                            <div className="w-24">
                               <input type="number" value={machBatchGold} placeholder="统一余额"
                                 onChange={e => setMachBatchGold(e.target.value)}
                                 className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                             </div>
                             <div className="w-24">
                               <input type="number" step="0.01" value={machBatchCost} placeholder="总成本"
-                                onChange={e => setMachBatchCost(e.target.value)}
+                                onChange={e => handleBatchCostChange(e.target.value)}
+                                className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
+                            </div>
+                            <div className="w-24">
+                              <input type="number" step="0.01" value={machBatchUnitPrice} placeholder="单价/千万"
+                                onChange={e => handleBatchUnitPriceChange(e.target.value)}
                                 className="w-full bg-black/40 border border-cyber-accent/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                             </div>
                             <button onClick={() => handleBatchAddToMachine(machine.id)} 

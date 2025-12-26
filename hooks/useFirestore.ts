@@ -83,9 +83,12 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  const completeOrder = async (orderId: string, windowResults: WindowResult[]) => {
+  const completeOrder = async (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => {
     const order = orders.find(o => o.id === orderId);
-    if (!order || !order.windowSnapshots) return;
+    if (!order) {
+      console.error('completeOrder: 订单不存在', orderId);
+      return;
+    }
 
     // 计算当前窗口的消耗
     const currentConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
@@ -112,14 +115,20 @@ export function useFirestore(tenantId: string | null) {
       }];
     }
 
-    await dataApi.update('orders', orderId, {
+    const updateResult = await dataApi.update('orders', orderId, {
       ...order,
       status: 'completed',
       windowResults,
       totalConsumed,
       loss: loss > 0 ? loss : 0,
-      executionHistory
+      executionHistory,
+      bossEndBalance: bossEndBalance !== undefined ? bossEndBalance : order.bossEndBalance
     });
+    
+    if (!updateResult.success) {
+      console.error('completeOrder: 更新订单失败', updateResult.error);
+      return;
+    }
 
     for (const result of windowResults) {
       const window = cloudWindows.find(w => w.id === result.windowId);
@@ -211,7 +220,20 @@ export function useFirestore(tenantId: string | null) {
 
   const resumeOrder = async (orderId: string, newStaffId?: string): Promise<boolean> => {
     const order = orders.find(o => o.id === orderId);
-    if (!order) return false;
+    if (!order) {
+      console.error('resumeOrder: 订单不存在', orderId);
+      return false;
+    }
+
+    const targetStaffId = newStaffId || order.staffId;
+    
+    // 检查目标员工是否已有进行中的订单
+    const staffPendingOrders = orders.filter(o => o.staffId === targetStaffId && o.status === 'pending');
+    if (staffPendingOrders.length > 0) {
+      // 员工已有进行中的订单，不能恢复
+      console.error('resumeOrder: 员工已有进行中的订单', targetStaffId);
+      return false;
+    }
 
     const isTransfer = newStaffId && newStaffId !== order.staffId;
     
@@ -229,7 +251,12 @@ export function useFirestore(tenantId: string | null) {
     }
     // 恢复（同一员工）：保留 parentOrderId，最后合并统计
 
-    await dataApi.update('orders', orderId, updateData);
+    const result = await dataApi.update('orders', orderId, updateData);
+    if (!result.success) {
+      console.error('resumeOrder: 更新订单失败', result.error);
+      return false;
+    }
+    
     await loadData();
     return true;
   };
@@ -327,7 +354,31 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  const deleteCloudWindow = async (id: string) => {
+  const deleteCloudWindow = async (id: string, windowData?: CloudWindow) => {
+    // 找到要删除的窗口（优先使用传入的数据，否则从本地查找）
+    const window = windowData || cloudWindows.find(w => w.id === id);
+    console.log('删除窗口:', id, '找到窗口:', window);
+    
+    if (window && window.goldBalance > 0) {
+      // 计算平均成本
+      const validPurchases = purchases.filter(p => !p.type || p.type === 'transfer_in');
+      const totalAmount = validPurchases.reduce((sum, p) => sum + p.amount, 0);
+      const totalCost = validPurchases.reduce((sum, p) => sum + p.cost, 0);
+      const avgCost = totalAmount > 0 ? totalCost / (totalAmount / 10000000) : 29;
+      
+      // 创建负数采购记录来冲抵
+      const cost = (window.goldBalance / 10000000) * avgCost;
+      console.log('创建负数采购记录:', -window.goldBalance, -cost);
+      await dataApi.add('purchases', {
+        tenantId,
+        date: new Date().toISOString().split('T')[0],
+        amount: -window.goldBalance,
+        cost: -Math.round(cost * 100) / 100,
+        type: 'delete',
+        note: `删除窗口 #${window.windowNumber}`
+      });
+    }
+    
     await dataApi.delete('cloudWindows', id);
     await loadData();
   };
@@ -493,6 +544,79 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  // 撤销已完成的订单（恢复到进行中状态，恢复窗口余额）
+  const revertOrder = async (orderId: string): Promise<boolean> => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || order.status !== 'completed') {
+      console.error('revertOrder: 订单不存在或状态不是已完成', orderId);
+      return false;
+    }
+
+    // 恢复窗口余额
+    if (order.windowResults && order.windowSnapshots) {
+      for (const result of order.windowResults) {
+        const snapshot = order.windowSnapshots.find(s => s.windowId === result.windowId);
+        if (snapshot) {
+          const window = cloudWindows.find(w => w.id === result.windowId);
+          if (window) {
+            // 恢复到开始时的余额
+            await dataApi.update('cloudWindows', result.windowId, {
+              ...window,
+              goldBalance: snapshot.startBalance,
+              userId: order.staffId // 重新分配给员工
+            });
+          } else {
+            // 窗口可能被删除了（余额为0时会删除），需要重新创建
+            if (snapshot.startBalance > 0) {
+              await dataApi.add('cloudWindows', {
+                machineId: snapshot.machineId,
+                windowNumber: snapshot.windowNumber,
+                goldBalance: snapshot.startBalance,
+                userId: order.staffId,
+                tenantId
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 恢复中途释放的窗口余额
+    if (order.partialResults) {
+      for (const pr of order.partialResults) {
+        const window = cloudWindows.find(w => w.id === pr.windowId);
+        if (window) {
+          // 恢复到释放前的余额，重新分配给员工
+          await dataApi.update('cloudWindows', pr.windowId, {
+            ...window,
+            goldBalance: pr.startBalance,
+            userId: order.staffId
+          });
+        }
+      }
+    }
+
+    // 更新订单状态为进行中，清除完成时的数据
+    const updateResult = await dataApi.update('orders', orderId, {
+      ...order,
+      status: 'pending',
+      windowResults: null,
+      totalConsumed: null,
+      loss: 0,
+      partialResults: null,
+      bossEndBalance: null,
+      // 保留 windowSnapshots 和其他原始数据
+    });
+
+    if (!updateResult.success) {
+      console.error('revertOrder: 更新订单失败', updateResult.error);
+      return false;
+    }
+
+    await loadData();
+    return true;
+  };
+
   return {
     purchases,
     orders,
@@ -530,6 +654,7 @@ export function useFirestore(tenantId: string | null) {
     rechargeWindow,
     releaseOrderWindow,
     addWindowToOrder,
+    revertOrder,
     refreshData: loadData
   };
 }

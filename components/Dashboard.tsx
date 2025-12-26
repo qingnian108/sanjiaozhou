@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Activity, Clock, CheckCircle, Trash2 } from 'lucide-react';
+import { Activity, Clock, CheckCircle, Trash2, RotateCcw } from 'lucide-react';
 import { GlassCard, StatBox, SectionHeader, useCyberModal } from './CyberUI';
 import { GlobalStats, DailyStats, OrderRecord, Staff, CloudWindow, PurchaseRecord, Settings } from '../types';
 import { formatCurrency, formatWan } from '../utils';
@@ -13,10 +13,11 @@ interface DashboardProps {
   purchases: PurchaseRecord[];
   settings: Settings;
   onDeleteOrder: (id: string) => void;
+  onRevertOrder?: (id: string) => Promise<boolean>;
   isDispatcher?: boolean;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, cloudWindows, purchases, settings, onDeleteOrder, isDispatcher = false }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, orders, staffList, cloudWindows, purchases, settings, onDeleteOrder, onRevertOrder, isDispatcher = false }) => {
   const today = new Date().toISOString().split('T')[0];
   
   // 计算实际库存（所有窗口余额总和）
@@ -49,6 +50,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     });
     return profit;
   }, [orders, avgCost, settings.employeeCostRate]);
+
+  // 计算今日利润
+  const todayProfit = useMemo(() => {
+    const todayOrders = orders.filter(o => o.status === 'completed' && o.date === today);
+    let profit = 0;
+    todayOrders.forEach(order => {
+      const revenue = (order.amount / 1000) * order.unitPrice;
+      const lossInWan = (order.loss || 0) / 10000;
+      const cogs = ((order.amount + lossInWan) / 1000) * avgCost;
+      const laborCost = (order.amount / 1000) * settings.employeeCostRate;
+      profit += revenue - cogs - laborCost;
+    });
+    return profit;
+  }, [orders, avgCost, settings.employeeCostRate, today]);
   
   // 进行中订单的日期筛选
   const [pendingDateFilter, setPendingDateFilter] = useState('');
@@ -59,6 +74,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
   const [customEndDate, setCustomEndDate] = useState(today);
   // 删除确认
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+  // 撤销确认
+  const [revertOrderId, setRevertOrderId] = useState<string | null>(null);
+  
+  const { showAlert, showSuccess, ModalComponent } = useCyberModal();
   
   // 获取昨天日期
   const getYesterday = () => {
@@ -89,8 +108,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     if (period === 'custom') return customEndDate;
     return today;
   };
-  
-  const { showSuccess, ModalComponent } = useCyberModal();
   
   // 获取员工名称
   const getStaffName = (staffId: string) => {
@@ -158,13 +175,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     }
   };
 
+  // 确认撤销订单
+  const handleRevertOrder = async () => {
+    if (revertOrderId && onRevertOrder) {
+      const success = await onRevertOrder(revertOrderId);
+      setRevertOrderId(null);
+      if (success) {
+        showSuccess('撤销成功', '订单已恢复到进行中状态，窗口余额已恢复');
+      } else {
+        showAlert('撤销失败', '无法撤销订单，请检查订单状态');
+      }
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <SectionHeader title="指挥中心 // 资产总览" icon={Activity} />
       
       {/* KPI Grid - 客服隐藏敏感数据 */}
       {!isDispatcher && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StatBox 
+            label="今日利润" 
+            value={formatCurrency(todayProfit)}
+            subValue="今日盈亏"
+          />
           <StatBox 
             label="历史累计利润" 
             value={formatCurrency(totalProfit)}
@@ -319,7 +354,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
           )}
           
           {/* 统计 */}
-          <div className="grid grid-cols-5 gap-2 mb-4">
+          <div className="grid grid-cols-6 gap-2 mb-4">
             <div className="bg-green-500/10 border border-green-500/30 p-2 rounded text-center">
               <div className="text-xs text-green-400">订单</div>
               <div className="text-lg font-mono text-green-400">{completedStats.total}</div>
@@ -331,6 +366,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             <div className="bg-red-500/10 border border-red-500/30 p-2 rounded text-center">
               <div className="text-xs text-red-400">损耗</div>
               <div className="text-lg font-mono text-red-400">{(completedStats.totalLoss / 10000).toFixed(0)}万</div>
+            </div>
+            <div className="bg-orange-500/10 border border-orange-500/30 p-2 rounded text-center">
+              <div className="text-xs text-orange-400">损耗比</div>
+              <div className="text-lg font-mono text-orange-400">
+                {completedStats.totalAmount > 0 
+                  ? ((completedStats.totalLoss / 10000 / completedStats.totalAmount) * 100).toFixed(1) 
+                  : '0'}%
+              </div>
             </div>
             <div className="bg-blue-500/10 border border-blue-500/30 p-2 rounded text-center">
               <div className="text-xs text-blue-400">收入</div>
@@ -357,6 +400,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400">已完成</span>
+                      {onRevertOrder && (
+                        <button onClick={() => setRevertOrderId(order.id)} className="p-1 text-yellow-400 hover:bg-yellow-500/20 rounded" title="撤销订单（恢复窗口余额）">
+                          <RotateCcw size={14} />
+                        </button>
+                      )}
                       <button onClick={() => setDeleteOrderId(order.id)} className="p-1 text-red-400 hover:bg-red-500/20 rounded" title="删除订单">
                         <Trash2 size={14} />
                       </button>
@@ -397,6 +445,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
             <div className="flex gap-3">
               <button onClick={() => setDeleteOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
               <button onClick={handleDeleteOrder} className="flex-1 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/40 font-mono text-sm">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 撤销确认弹窗 */}
+      {revertOrderId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-cyber-panel border border-yellow-500 p-6 max-w-md w-full relative">
+            <div className="absolute top-0 left-0 w-16 h-[2px] bg-yellow-500"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-yellow-500"></div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 border border-yellow-500 flex items-center justify-center text-yellow-400 font-mono text-lg">
+                <RotateCcw size={16} />
+              </div>
+              <h3 className="text-xl font-mono text-yellow-400 tracking-wider">撤销订单</h3>
+            </div>
+            <p className="text-gray-300 mb-4 font-mono text-sm">确定要撤销这个订单吗？</p>
+            <p className="text-yellow-400/80 mb-6 font-mono text-xs">• 订单将恢复到"进行中"状态<br/>• 窗口余额将恢复到派单时的金额<br/>• 窗口将重新分配给原员工</p>
+            <div className="flex gap-3">
+              <button onClick={() => setRevertOrderId(null)} className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 font-mono text-sm">取消</button>
+              <button onClick={handleRevertOrder} className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/40 font-mono text-sm">确认撤销</button>
             </div>
           </div>
         </div>

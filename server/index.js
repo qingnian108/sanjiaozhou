@@ -406,10 +406,14 @@ app.post('/api/data/:collection', async (req, res) => {
 // 通用 CRUD - 更新数据
 app.put('/api/data/:collection/:id', async (req, res) => {
   try {
-    const { tenantId, ...data } = req.body;
-    await Data.findByIdAndUpdate(req.params.id, { data });
+    const { tenantId, id: _id, ...data } = req.body; // 排除 id 字段，避免覆盖 _id
+    const result = await Data.findByIdAndUpdate(req.params.id, { data }, { new: true });
+    if (!result) {
+      return res.json({ success: false, error: '记录不存在' });
+    }
     res.json({ success: true });
   } catch (err) {
+    console.error('更新数据失败:', err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -417,7 +421,30 @@ app.put('/api/data/:collection/:id', async (req, res) => {
 // 通用 CRUD - 删除数据
 app.delete('/api/data/:collection/:id', async (req, res) => {
   try {
-    await Data.findByIdAndDelete(req.params.id);
+    const { collection, id } = req.params;
+    
+    // 特殊处理云机删除：检查是否有其他租户的窗口关联
+    if (collection === 'cloudMachines') {
+      const machine = await Data.findById(id);
+      if (machine) {
+        // 查找所有关联这个云机的窗口
+        const allWindows = await Data.find({ 
+          collection: 'cloudWindows', 
+          'data.machineId': id 
+        });
+        
+        // 检查是否有其他租户的窗口
+        const otherTenantWindows = allWindows.filter(w => w.tenantId !== machine.tenantId);
+        if (otherTenantWindows.length > 0) {
+          return res.json({ 
+            success: false, 
+            error: `无法删除：该云机下有 ${otherTenantWindows.length} 个窗口属于其他租户（好友转让的窗口）` 
+          });
+        }
+      }
+    }
+    
+    await Data.findByIdAndDelete(id);
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -883,52 +910,10 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
       // 计算这批哈夫币的成本
       const transferCost = transfer.totalGold * avgCostPerGold;
       
-      // 按原云机分组窗口，为每个原云机创建一个新云机
-      const windowsByMachine = {};
-      for (const windowInfo of (transfer.windowsInfo || [])) {
-        const machineId = windowInfo.machineId || transfer.machineId;
-        if (!windowsByMachine[machineId]) {
-          windowsByMachine[machineId] = {
-            machineInfo: windowInfo.machineInfo || transfer.machineInfo,
-            windows: []
-          };
-        }
-        windowsByMachine[machineId].windows.push(windowInfo);
-      }
-      
-      // 如果 windowsInfo 没有 machineId，使用旧逻辑（所有窗口归到一个云机）
-      if (Object.keys(windowsByMachine).length === 0) {
-        windowsByMachine[transfer.machineId] = {
-          machineInfo: transfer.machineInfo,
-          windows: transfer.windowsInfo || []
-        };
-      }
-      
-      // 为每个原云机创建新云机，并更新窗口
-      const machineIdMap = {}; // 原云机ID -> 新云机ID
-      for (const [originalMachineId, machineData] of Object.entries(windowsByMachine)) {
-        const info = machineData.machineInfo || transfer.machineInfo || {};
-        const newMachine = new Data({
-          collection: 'cloudMachines',
-          tenantId: transfer.toTenantId,
-          data: {
-            phone: info.phone || '转让云机',
-            platform: info.platform || '好友转让',
-            loginType: info.loginType || 'code',
-            loginPassword: info.loginPassword || ''
-          }
-        });
-        await newMachine.save();
-        machineIdMap[originalMachineId] = newMachine._id.toString();
-        console.log('Created new machine for receiver:', newMachine._id.toString(), 'from original:', originalMachineId);
-      }
-      
-      // 更新窗口的 tenantId 和 machineId
+      // 只更新窗口的 tenantId，不创建新云机，不改变 machineId
+      // 被转让方通过窗口关联自然能看到原来的云机
       for (let i = 0; i < transfer.windowIds.length; i++) {
         const windowId = transfer.windowIds[i];
-        const windowInfo = transfer.windowsInfo?.[i] || {};
-        const originalMachineId = windowInfo.machineId || transfer.machineId;
-        const newMachineId = machineIdMap[originalMachineId] || Object.values(machineIdMap)[0];
         
         let windowDoc = await Data.findById(windowId);
         if (!windowDoc) {
@@ -936,13 +921,14 @@ app.post('/api/machine-transfer/respond', async (req, res) => {
         }
         
         if (windowDoc) {
+          // 只更新 tenantId，保持 machineId 不变
           windowDoc.tenantId = transfer.toTenantId;
           if (windowDoc.data) {
-            windowDoc.data.userId = null;
-            windowDoc.data.machineId = newMachineId;
+            windowDoc.data.userId = null; // 清除分配的员工
+            // 不改变 machineId，窗口还是属于原来的云机
           }
           await windowDoc.save();
-          console.log('Window transferred:', windowId, 'to machine:', newMachineId);
+          console.log('Window transferred:', windowId, 'tenantId changed to:', transfer.toTenantId);
         } else {
           console.log('Window not found:', windowId);
         }
@@ -1861,6 +1847,61 @@ app.post('/api/init-super-admin', async (req, res) => {
     await user.save();
     
     res.json({ success: true, message: '超级管理员创建成功' });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ========== 联系定制 API ==========
+// 联系定制模型
+const ContactRequestSchema = new mongoose.Schema({
+  tenantId: String,
+  tenantName: String,
+  contact: String,        // 联系方式
+  message: String,        // 留言内容
+  status: { type: String, enum: ['pending', 'processed'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+const ContactRequest = mongoose.model('ContactRequest', ContactRequestSchema);
+
+// 提交联系定制请求
+app.post('/api/contact-request', async (req, res) => {
+  try {
+    const { tenantId, tenantName, contact, message } = req.body;
+    const request = new ContactRequest({ tenantId, tenantName, contact, message });
+    await request.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 获取所有联系定制请求（超级管理员用）
+app.get('/api/contact-requests', async (req, res) => {
+  try {
+    const requests = await ContactRequest.find().sort({ createdAt: -1 });
+    res.json({ success: true, data: requests });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 标记联系请求为已处理
+app.put('/api/contact-request/:id', async (req, res) => {
+  try {
+    const { status } = req.body;
+    await ContactRequest.findByIdAndUpdate(req.params.id, { status });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 删除联系请求
+app.delete('/api/contact-request/:id', async (req, res) => {
+  try {
+    await ContactRequest.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }

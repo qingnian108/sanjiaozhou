@@ -13,7 +13,7 @@ interface Props {
   settings: Settings;
   windowRequests: WindowRequest[];
   onLogout: () => void;
-  onCompleteOrder: (orderId: string, windowResults: WindowResult[]) => void;
+  onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
   onPauseOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[]) => Promise<boolean>;
   onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
   onReleaseOrderWindow?: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
@@ -65,6 +65,7 @@ export const StaffPortal: React.FC<Props> = ({
   const [pauseOrderId, setPauseOrderId] = useState<string | null>(null); // 暂停订单ID
   const [pauseAmount, setPauseAmount] = useState(''); // 暂停时已完成金额
   const [pauseWindowBalances, setPauseWindowBalances] = useState<Record<string, string>>({}); // 暂停时窗口余额
+  const [isPausingOrder, setIsPausingOrder] = useState(false); // 防止重复点击
   const [showWindowSelectModal, setShowWindowSelectModal] = useState(false);
   const [selectedWindowId, setSelectedWindowId] = useState('');
   const [releaseMyWindowId, setReleaseMyWindowId] = useState<string | null>(null);
@@ -73,6 +74,9 @@ export const StaffPortal: React.FC<Props> = ({
   // 释放订单窗口相关状态
   const [releaseOrderWindowId, setReleaseOrderWindowId] = useState<string | null>(null);
   const [releaseOrderBalance, setReleaseOrderBalance] = useState('');
+  
+  // 老板账号结束余额
+  const [bossEndBalances, setBossEndBalances] = useState<Record<string, string>>({});
   
   // 删除订单确认状态
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
@@ -175,7 +179,7 @@ export const StaffPortal: React.FC<Props> = ({
 
   // 处理暂停订单
   const handlePauseOrder = async () => {
-    if (!pauseOrderId || !pauseOrder) return;
+    if (!pauseOrderId || !pauseOrder || isPausingOrder) return;
     
     const amount = parseFloat(pauseAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -187,27 +191,33 @@ export const StaffPortal: React.FC<Props> = ({
       return;
     }
 
-    // 构建窗口结果
-    const results: WindowResult[] = myWindows.map(window => {
-      const endBalance = pauseWindowBalances[window.id] 
-        ? parseFloat(pauseWindowBalances[window.id]) * 10000
-        : window.goldBalance;
-      return {
-        windowId: window.id,
-        endBalance,
-        consumed: window.goldBalance - endBalance
-      };
-    });
+    setIsPausingOrder(true); // 开始处理，禁用按钮
+    
+    try {
+      // 构建窗口结果
+      const results: WindowResult[] = myWindows.map(window => {
+        const endBalance = pauseWindowBalances[window.id] 
+          ? parseFloat(pauseWindowBalances[window.id]) * 10000
+          : window.goldBalance;
+        return {
+          windowId: window.id,
+          endBalance,
+          consumed: window.goldBalance - endBalance
+        };
+      });
 
-    const success = await onPauseOrder(pauseOrderId, amount, results);
-    if (success) {
-      showSuccess('操作成功', '订单已暂停，剩余部分已创建新订单');
-    } else {
-      showAlert('操作失败', '暂停订单失败，请重试');
+      const success = await onPauseOrder(pauseOrderId, amount, results);
+      if (success) {
+        showSuccess('操作成功', '订单已暂停，剩余部分已创建新订单');
+      } else {
+        showAlert('操作失败', '暂停订单失败，请重试');
+      }
+      setPauseOrderId(null);
+      setPauseAmount('');
+      setPauseWindowBalances({});
+    } finally {
+      setIsPausingOrder(false); // 处理完成，恢复按钮
     }
-    setPauseOrderId(null);
-    setPauseAmount('');
-    setPauseWindowBalances({});
   };
 
   // 处理申请窗口
@@ -244,11 +254,16 @@ export const StaffPortal: React.FC<Props> = ({
       showAlert('无法完成', '您当前没有分配的窗口');
       return;
     }
+
+    // 检查是否所有窗口都填写了余额
+    const missingBalances = staffWindows.filter(w => !windowBalances[w.id] && windowBalances[w.id] !== '0');
+    if (missingBalances.length > 0) {
+      showAlert('请填写完整', `请填写所有窗口的剩余余额（还有 ${missingBalances.length} 个窗口未填写）`);
+      return;
+    }
     
     const results: WindowResult[] = staffWindows.map(window => {
-      const endBalance = windowBalances[window.id] 
-        ? parseFloat(windowBalances[window.id]) * 10000
-        : window.goldBalance; // 不填则默认无消耗
+      const endBalance = parseFloat(windowBalances[window.id]) * 10000;
       return {
         windowId: window.id,
         endBalance,
@@ -264,20 +279,25 @@ export const StaffPortal: React.FC<Props> = ({
       return;
     }
 
-    onCompleteOrder(order.id, results);
+    // 获取老板账号结束余额
+    const bossEndBalance = bossEndBalances[order.id] ? parseFloat(bossEndBalances[order.id]) * 10000 : undefined;
+    onCompleteOrder(order.id, results, bossEndBalance);
     // 完成后清空该订单的临时数据
     setOrderWindowBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setOrderSavedWindows(prev => { const n = {...prev}; delete n[order.id]; return n; });
+    setBossEndBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setActiveOrderId(null);
   };
 
   // 确认完成订单（消耗不足时）
   const confirmCompleteOrder = () => {
     if (pendingCompleteOrder) {
-      onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results);
+      const bossEndBalance = bossEndBalances[pendingCompleteOrder.order.id] ? parseFloat(bossEndBalances[pendingCompleteOrder.order.id]) * 10000 : undefined;
+      onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results, bossEndBalance);
       // 完成后清空该订单的临时数据
       setOrderWindowBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setOrderSavedWindows(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
+      setBossEndBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setActiveOrderId(null);
       setPendingCompleteOrder(null);
     }
@@ -474,16 +494,17 @@ export const StaffPortal: React.FC<Props> = ({
               <div className="flex gap-3">
                 <button 
                   onClick={() => { setPauseOrderId(null); setPauseAmount(''); setPauseWindowBalances({}); }} 
-                  className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800"
+                  disabled={isPausingOrder}
+                  className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 disabled:opacity-50"
                 >
                   取消
                 </button>
                 <button 
                   onClick={handlePauseOrder} 
-                  disabled={!pauseAmount || parseFloat(pauseAmount) <= 0}
+                  disabled={!pauseAmount || parseFloat(pauseAmount) <= 0 || isPausingOrder}
                   className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30 disabled:opacity-50"
                 >
-                  确认暂停
+                  {isPausingOrder ? '处理中...' : '确认暂停'}
                 </button>
               </div>
             </div>
@@ -532,6 +553,34 @@ export const StaffPortal: React.FC<Props> = ({
                   <div className="text-lg font-mono text-cyber-primary">{myWindows.length}</div>
                 </div>
               </div>
+
+              {/* 老板账号余额 */}
+              {activeOrder.bossStartBalance !== undefined && (
+                <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded">
+                  <div className="text-sm text-purple-400 font-mono mb-2">老板账号余额</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-400">打之前</div>
+                      <div className="text-lg font-mono text-purple-400">{formatWan(activeOrder.bossStartBalance)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-400">打之后（请填写）</div>
+                      <input
+                        type="number"
+                        placeholder="输入结束余额（万）"
+                        value={bossEndBalances[activeOrder.id] || ''}
+                        onChange={e => setBossEndBalances({...bossEndBalances, [activeOrder.id]: e.target.value})}
+                        className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                  {bossEndBalances[activeOrder.id] && (
+                    <div className="mt-2 text-xs text-gray-400">
+                      消耗: <span className="text-red-400">{formatWan(activeOrder.bossStartBalance - parseFloat(bossEndBalances[activeOrder.id]) * 10000)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 已释放的窗口 */}
               {activeOrder.partialResults && activeOrder.partialResults.length > 0 && (

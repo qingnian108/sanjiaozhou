@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut, UserPlus, Wallet } from 'lucide-react';
+import { LayoutDashboard, Send, Settings as SettingsIcon, Hexagon, Users, MessageSquare, Monitor, LogOut, UserPlus, Wallet, Phone } from 'lucide-react';
 import { calculateStats } from './utils';
 import { useFirestore } from './hooks/useFirestore';
+import { CloudWindow } from './types';
 import { useAuth } from './hooks/useAuth';
+import { contactApi } from './api';
 
 // Pages
 import { Dashboard } from './components/Dashboard';
@@ -38,7 +40,19 @@ const DISPATCHER_NAV_ITEMS = [
   { path: '/kook', label: 'Kook', icon: MessageSquare },
 ];
 
-const Navigation = ({ onLogout, isDispatcher = false }: { onLogout: () => void; isDispatcher?: boolean }) => {
+const Navigation = ({ 
+  onLogout, 
+  isDispatcher = false,
+  tenantId,
+  tenantName,
+  onShowContact
+}: { 
+  onLogout: () => void; 
+  isDispatcher?: boolean;
+  tenantId?: string;
+  tenantName?: string;
+  onShowContact?: () => void;
+}) => {
   const location = useLocation();
   const navItems = isDispatcher ? DISPATCHER_NAV_ITEMS : NAV_ITEMS;
   
@@ -68,6 +82,16 @@ const Navigation = ({ onLogout, isDispatcher = false }: { onLogout: () => void; 
           </Link>
         );
       })}
+      {/* 联系定制按钮 */}
+      {onShowContact && (
+        <button
+          onClick={onShowContact}
+          className="flex flex-col items-center justify-center p-3 md:py-5 text-purple-400 hover:text-purple-300 transition-colors"
+        >
+          <Phone size={32} className="mb-2" />
+          <span className="text-sm font-bold tracking-wide hidden md:block">定制</span>
+        </button>
+      )}
       <button
         onClick={onLogout}
         className="flex flex-col items-center justify-center p-3 md:py-5 md:mt-auto text-gray-500 hover:text-red-400 transition-colors"
@@ -123,7 +147,8 @@ const AdminApp: React.FC<{
     refreshData,
     completeOrder,
     releaseOrderWindow,
-    addWindowToOrder
+    addWindowToOrder,
+    revertOrder
   } = useFirestore(tenantId);
 
   // 包装创建员工函数，创建后刷新数据
@@ -143,6 +168,30 @@ const AdminApp: React.FC<{
     message: string;
     onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  // 联系定制弹窗状态
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactForm, setContactForm] = useState({ contact: '', message: '' });
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+
+  const handleSubmitContact = async () => {
+    if (!contactForm.contact.trim()) return;
+    setContactSubmitting(true);
+    try {
+      await contactApi.submit({
+        tenantId,
+        tenantName,
+        contact: contactForm.contact,
+        message: contactForm.message
+      });
+      setShowContactModal(false);
+      setContactForm({ contact: '', message: '' });
+      alert('提交成功！我们会尽快与您联系。');
+    } catch (err) {
+      alert('提交失败，请稍后重试');
+    }
+    setContactSubmitting(false);
+  };
 
   const showConfirmModal = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModal({ isOpen: true, title, message, onConfirm });
@@ -176,9 +225,9 @@ const AdminApp: React.FC<{
     });
   };
 
-  const handleDeleteCloudWindow = async (id: string) => {
+  const handleDeleteCloudWindow = async (id: string, windowData?: CloudWindow) => {
     showConfirmModal('确认删除', '确认删除该窗口？', async () => {
-      await deleteCloudWindow(id);
+      await deleteCloudWindow(id, windowData);
     });
   };
 
@@ -196,7 +245,59 @@ const AdminApp: React.FC<{
         <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyber-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyber-secondary/5 rounded-full blur-[120px] pointer-events-none"></div>
 
-        <Navigation onLogout={onLogout} />
+        <Navigation onLogout={onLogout} tenantId={tenantId} tenantName={tenantName} onShowContact={() => setShowContactModal(true)} />
+
+        {/* 联系定制弹窗 */}
+        {showContactModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
+            <div className="bg-cyber-panel border border-purple-500/30 p-6 max-w-md w-full">
+              <h3 className="text-xl font-mono text-purple-400 mb-4">联系定制</h3>
+              <p className="text-gray-400 text-sm mb-4">
+                需要定制专属管理系统？留下您的联系方式，我们会尽快与您联系！
+              </p>
+              <p className="text-gray-500 text-xs mb-4">
+                支持定制：员工管理系统、订单管理系统、库存管理系统、财务管理系统等
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-purple-400 text-sm font-mono mb-1">联系方式 *</label>
+                  <input
+                    type="text"
+                    placeholder="手机号 / 微信 / QQ"
+                    value={contactForm.contact}
+                    onChange={e => setContactForm({ ...contactForm, contact: e.target.value })}
+                    className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-purple-400 text-sm font-mono mb-1">需求描述</label>
+                  <textarea
+                    placeholder="请简单描述您的定制需求..."
+                    value={contactForm.message}
+                    onChange={e => setContactForm({ ...contactForm, message: e.target.value })}
+                    rows={3}
+                    className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowContactModal(false)}
+                  className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSubmitContact}
+                  disabled={!contactForm.contact.trim() || contactSubmitting}
+                  className="flex-1 py-2 bg-purple-500/20 border border-purple-500 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50"
+                >
+                  {contactSubmitting ? '提交中...' : '提交'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="relative z-10 max-w-7xl mx-auto p-4 md:p-10">
           <header className="mb-8 flex justify-between items-end border-b border-cyber-primary/30 pb-4">
@@ -217,7 +318,7 @@ const AdminApp: React.FC<{
           </header>
 
           <Routes>
-            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} onRevertOrder={revertOrder} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
@@ -339,6 +440,30 @@ const DispatcherApp: React.FC<{
     onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
+  // 联系定制弹窗状态
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactForm, setContactForm] = useState({ contact: '', message: '' });
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+
+  const handleSubmitContact = async () => {
+    if (!contactForm.contact.trim()) return;
+    setContactSubmitting(true);
+    try {
+      await contactApi.submit({
+        tenantId,
+        tenantName,
+        contact: contactForm.contact,
+        message: contactForm.message
+      });
+      setShowContactModal(false);
+      setContactForm({ contact: '', message: '' });
+      alert('提交成功！我们会尽快与您联系。');
+    } catch (err) {
+      alert('提交失败，请稍后重试');
+    }
+    setContactSubmitting(false);
+  };
+
   const showConfirmModal = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModal({ isOpen: true, title, message, onConfirm });
   };
@@ -353,9 +478,9 @@ const DispatcherApp: React.FC<{
     });
   };
 
-  const handleDeleteCloudWindow = async (id: string) => {
+  const handleDeleteCloudWindow = async (id: string, windowData?: CloudWindow) => {
     showConfirmModal('确认删除', '确认删除该窗口？', async () => {
-      await deleteCloudWindow(id);
+      await deleteCloudWindow(id, windowData);
     });
   };
 
@@ -393,7 +518,59 @@ const DispatcherApp: React.FC<{
         <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyber-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyber-secondary/5 rounded-full blur-[120px] pointer-events-none"></div>
 
-        <Navigation onLogout={onLogout} isDispatcher={true} />
+        <Navigation onLogout={onLogout} isDispatcher={true} tenantId={tenantId} tenantName={tenantName} onShowContact={() => setShowContactModal(true)} />
+
+        {/* 联系定制弹窗 */}
+        {showContactModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
+            <div className="bg-cyber-panel border border-purple-500/30 p-6 max-w-md w-full">
+              <h3 className="text-xl font-mono text-purple-400 mb-4">联系定制</h3>
+              <p className="text-gray-400 text-sm mb-4">
+                需要定制专属管理系统？留下您的联系方式，我们会尽快与您联系！
+              </p>
+              <p className="text-gray-500 text-xs mb-4">
+                支持定制：员工管理系统、订单管理系统、库存管理系统、财务管理系统等
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-purple-400 text-sm font-mono mb-1">联系方式 *</label>
+                  <input
+                    type="text"
+                    placeholder="手机号 / 微信 / QQ"
+                    value={contactForm.contact}
+                    onChange={e => setContactForm({ ...contactForm, contact: e.target.value })}
+                    className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-purple-400 text-sm font-mono mb-1">需求描述</label>
+                  <textarea
+                    placeholder="请简单描述您的定制需求..."
+                    value={contactForm.message}
+                    onChange={e => setContactForm({ ...contactForm, message: e.target.value })}
+                    rows={3}
+                    className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowContactModal(false)}
+                  className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSubmitContact}
+                  disabled={!contactForm.contact.trim() || contactSubmitting}
+                  className="flex-1 py-2 bg-purple-500/20 border border-purple-500 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50"
+                >
+                  {contactSubmitting ? '提交中...' : '提交'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="relative z-10 max-w-7xl mx-auto p-4 md:p-10">
           <header className="mb-8 flex justify-between items-end border-b border-cyber-primary/30 pb-4">
@@ -530,10 +707,26 @@ const App: React.FC = () => {
     return <Login onLogin={handleLogin} onRegisterAdmin={handleRegisterAdmin} onChangePassword={changePassword} onSuperLogin={handleSuperLogin} />;
   }
 
+  // 调试日志
+  console.log('staffInfo:', staffInfo);
+
+  // 如果是超管通过普通登录进来，自动切换到超管模式
+  if (staffInfo.role === 'super') {
+    return <SuperAdmin onLogout={logout} onLoginAsTenant={handleLoginAsTenant} />;
+  }
+
   if (!staffInfo.tenantId) {
+    // 自动清除无效的登录状态并重新登录
+    localStorage.removeItem('user');
     return (
-      <div className="bg-cyber-bg h-screen w-screen flex items-center justify-center text-red-500 font-mono">
-        租户信息错误，请重新登录
+      <div className="bg-cyber-bg h-screen w-screen flex flex-col items-center justify-center text-red-500 font-mono gap-4">
+        <div>租户信息错误，请重新登录</div>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="px-4 py-2 border border-cyber-primary text-cyber-primary hover:bg-cyber-primary/20"
+        >
+          刷新页面
+        </button>
       </div>
     );
   }
