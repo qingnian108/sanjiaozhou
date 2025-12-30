@@ -270,7 +270,9 @@ export function useFirestore(tenantId: string | null) {
   // 设置
   const saveSettings = async (newSettings: Settings) => {
     if (!tenantId) return;
-    await settingsApi.save(tenantId, newSettings);
+    console.log('saveSettings called:', tenantId, newSettings);
+    const result = await settingsApi.save(tenantId, newSettings);
+    console.log('saveSettings result:', result);
     setSettings(newSettings);
   };
 

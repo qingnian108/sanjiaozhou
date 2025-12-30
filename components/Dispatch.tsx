@@ -498,7 +498,7 @@ export const Dispatch: React.FC<Props> = ({
                 <div className="text-sm text-yellow-400 font-mono mb-2">已释放的窗口:</div>
                 {activeOrder.partialResults.map((pr, idx) => (
                   <div key={idx} className="text-xs text-gray-400 flex justify-between">
-                    <span>#{pr.windowNumber} - {pr.staffName}</span>
+                    <span>{pr.windowNumber} - {pr.staffName}</span>
                     <span>消耗: <span className="text-red-400">{formatWan(pr.consumed)}</span></span>
                   </div>
                 ))}
@@ -517,7 +517,7 @@ export const Dispatch: React.FC<Props> = ({
                   <div key={window.id} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
                     <div className="flex justify-between items-center mb-2">
                       <div>
-                        <span className="font-mono">#{window.windowNumber}</span>
+                        <span className="font-mono">{window.windowNumber}</span>
                         <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
                         {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
                       </div>
@@ -663,7 +663,7 @@ export const Dispatch: React.FC<Props> = ({
               return (
                 <>
                   <div className="mb-4 p-3 bg-black/30 rounded">
-                    <div className="text-sm text-gray-400">窗口: <span className="text-white">#{window.windowNumber}</span></div>
+                    <div className="text-sm text-gray-400">窗口: <span className="text-white">{window.windowNumber}</span></div>
                     <div className="text-sm text-gray-400">当前余额: <span className="text-cyber-accent">{formatWan(window.goldBalance)}</span></div>
                   </div>
                   <div className="mb-4">
@@ -847,7 +847,7 @@ export const Dispatch: React.FC<Props> = ({
                           className="px-4 py-2 bg-green-500/10 border border-green-500/50 text-green-400 text-sm rounded hover:bg-green-500/20 flex items-center gap-2"
                         >
                           <Circle size={10} className="fill-green-400" />
-                          <span className="font-bold">#{w.windowNumber}</span>
+                          <span className="font-bold">{w.windowNumber}</span>
                           <span className="text-gray-400">-</span>
                           <span>{getMachineName(w.machineId)}</span>
                           <span className="text-cyber-accent font-mono">({formatWan(w.goldBalance)})</span>
@@ -881,7 +881,7 @@ export const Dispatch: React.FC<Props> = ({
                           className="flex items-center justify-between mb-2 cursor-pointer"
                           onClick={() => toggleWindow(window.id)}
                         >
-                          <span className="font-mono text-sm">#{window.windowNumber}</span>
+                          <span className="font-mono text-sm">{window.windowNumber}</span>
                           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                             isSelected ? 'border-green-500 bg-green-500' : 'border-gray-500'
                           }`}>

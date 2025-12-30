@@ -22,7 +22,7 @@ interface ContactRequest {
 
 interface SettingsProps {
   settings: SettingsType;
-  onSave: (newSettings: SettingsType) => void;
+  onSave: (newSettings: SettingsType) => Promise<void>;
   tenantId?: string;
   username?: string;
   onSuperLogin?: (superUser: any) => void;
@@ -152,10 +152,14 @@ export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave, tenant
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form);
-    showSuccess("保存成功", "系统配置已更新");
+    try {
+      await onSave(form);
+      showSuccess("保存成功", "系统配置已更新");
+    } catch (err) {
+      console.error('保存设置失败:', err);
+    }
   };
 
   return (
@@ -180,7 +184,7 @@ export const SettingsPage: React.FC<SettingsProps> = ({ settings, onSave, tenant
             />
 
             <div className="pt-4 flex justify-end">
-              <NeonButton variant="primary">
+              <NeonButton variant="primary" type="submit">
                 <span className="flex items-center gap-2"><Save size={16} /> 保存配置</span>
               </NeonButton>
             </div>

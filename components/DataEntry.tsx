@@ -165,7 +165,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {selectedStaffWindows.map(w => (
                       <div key={w.id} className="bg-cyber-panel/50 p-2 rounded border border-cyber-primary/10">
-                        <div className="text-sm font-mono">#{w.windowNumber}</div>
+                        <div className="text-sm font-mono">{w.windowNumber}</div>
                         <div className="text-xs text-gray-400">{getMachineName(w.machineId)}</div>
                         <div className="text-cyber-accent font-mono">{formatWan(w.goldBalance)}</div>
                       </div>

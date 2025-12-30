@@ -454,13 +454,20 @@ app.delete('/api/data/:collection/:id', async (req, res) => {
 // 获取设置
 app.get('/api/settings/:tenantId', async (req, res) => {
   try {
-    const doc = await Data.findOne({ collection: 'settings', tenantId: req.params.tenantId });
+    // 使用原生 MongoDB 操作绕过 Mongoose 的 collection 保留字问题
+    const db = mongoose.connection.db;
+    const doc = await db.collection('datas').findOne({ 
+      collection: 'settings', 
+      tenantId: req.params.tenantId 
+    });
+    console.log('GET settings:', req.params.tenantId, 'doc:', doc);
     if (doc) {
       res.json({ success: true, data: doc.data });
     } else {
       res.json({ success: true, data: { employeeCostRate: 12, orderUnitPrice: 60, defaultFeePercent: 5, initialCapital: 10000 } });
     }
   } catch (err) {
+    console.error('GET settings error:', err);
     res.json({ success: false, error: err.message });
   }
 });
@@ -468,13 +475,18 @@ app.get('/api/settings/:tenantId', async (req, res) => {
 // 保存设置
 app.post('/api/settings/:tenantId', async (req, res) => {
   try {
-    await Data.findOneAndUpdate(
+    console.log('POST settings:', req.params.tenantId, 'body:', req.body);
+    // 使用原生 MongoDB 操作绕过 Mongoose 的 collection 保留字问题
+    const db = mongoose.connection.db;
+    const result = await db.collection('datas').updateOne(
       { collection: 'settings', tenantId: req.params.tenantId },
-      { data: req.body },
+      { $set: { data: req.body, collection: 'settings', tenantId: req.params.tenantId } },
       { upsert: true }
     );
+    console.log('POST settings result:', result);
     res.json({ success: true });
   } catch (err) {
+    console.error('POST settings error:', err);
     res.json({ success: false, error: err.message });
   }
 });

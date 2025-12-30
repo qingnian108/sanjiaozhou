@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Pause, Plus, Server, Unlock, Trash2 } from 'lucide-react';
+import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Pause, Plus, Server, Unlock, Trash2, Calculator } from 'lucide-react';
 import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult, WindowRequest } from '../types';
 import { GlassCard, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -80,6 +80,10 @@ export const StaffPortal: React.FC<Props> = ({
   
   // 删除订单确认状态
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+  
+  // 员工计算器状态
+  const [calcOrderId, setCalcOrderId] = useState<string | null>(null);
+  const [calcCurrentBalance, setCalcCurrentBalance] = useState('');
   
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
@@ -386,8 +390,22 @@ export const StaffPortal: React.FC<Props> = ({
                     <div>
                       <div className="font-mono text-lg">{order.date}</div>
                       <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent">{formatChineseNumber(order.amount)}</span> 万</div>
+                      {order.bossStartBalance !== undefined && (
+                        <div className="text-sm text-purple-400">老板余额: <span className="font-mono">{formatWan(order.bossStartBalance)}</span></div>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      {order.bossStartBalance !== undefined && (
+                        <button
+                          onClick={() => {
+                            setCalcOrderId(order.id);
+                            setCalcCurrentBalance('');
+                          }}
+                          className="px-3 py-2 border border-purple-500/50 text-purple-400 hover:bg-purple-500/20 flex items-center gap-1 text-sm"
+                        >
+                          <Calculator size={14} /> 计算器
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setPauseOrderId(order.id);
@@ -419,6 +437,95 @@ export const StaffPortal: React.FC<Props> = ({
             </div>
           </GlassCard>
         )}
+
+        {/* 员工计算器弹窗 */}
+        {calcOrderId && (() => {
+          const calcOrder = pendingOrders.find(o => o.id === calcOrderId);
+          if (!calcOrder || calcOrder.bossStartBalance === undefined) return null;
+          
+          const bossStartWan = calcOrder.bossStartBalance / 10000; // 老板初始余额（万）
+          const currentBalanceWan = calcCurrentBalance ? parseFloat(calcCurrentBalance) : null; // 当前余额（万）
+          const completedWan = currentBalanceWan !== null ? bossStartWan - currentBalanceWan : null; // 已打（万）
+          const remainingWan = currentBalanceWan !== null ? calcOrder.amount - completedWan! : calcOrder.amount; // 剩余（万）
+          
+          return (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+              <div className="bg-cyber-panel border border-purple-500/30 p-6 max-w-md w-full">
+                <h3 className="text-xl font-mono text-purple-400 mb-4 flex items-center gap-2">
+                  <Calculator size={20} /> 员工计算器
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* 订单信息 */}
+                  <div className="p-3 bg-black/30 rounded border border-purple-500/20">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs text-gray-400">订单金额</div>
+                        <div className="font-mono text-lg text-cyber-accent">{calcOrder.amount} 万</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-400">老板初始余额</div>
+                        <div className="font-mono text-lg text-purple-400">{bossStartWan} 万</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* 输入当前余额 */}
+                  <div>
+                    <label className="block text-purple-400 text-sm font-mono mb-2">当前老板余额（万）</label>
+                    <input
+                      type="number"
+                      placeholder="输入目前的老板余额"
+                      value={calcCurrentBalance}
+                      onChange={e => setCalcCurrentBalance(e.target.value)}
+                      className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2 text-lg"
+                      autoFocus
+                    />
+                  </div>
+                  
+                  {/* 计算结果 */}
+                  {currentBalanceWan !== null && !isNaN(currentBalanceWan) && (
+                    <div className="p-4 bg-purple-500/10 rounded border border-purple-500/30">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="text-center">
+                          <div className="text-xs text-gray-400 mb-1">已打</div>
+                          <div className={`font-mono text-2xl ${completedWan! >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {completedWan!.toFixed(2)} 万
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-400 mb-1">剩余</div>
+                          <div className={`font-mono text-2xl ${remainingWan <= 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {remainingWan.toFixed(2)} 万
+                          </div>
+                        </div>
+                      </div>
+                      {remainingWan <= 0 && (
+                        <div className="mt-3 text-center text-green-400 text-sm">
+                          ✓ 订单已完成！
+                        </div>
+                      )}
+                      {completedWan! < 0 && (
+                        <div className="mt-3 text-center text-red-400 text-sm">
+                          ⚠ 当前余额大于初始余额，请检查输入
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="mt-6">
+                  <button 
+                    onClick={() => { setCalcOrderId(null); setCalcCurrentBalance(''); }} 
+                    className="w-full py-2 border border-gray-600 text-gray-400 hover:bg-gray-800"
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 暂停订单弹窗 - 需要填写窗口余额 */}
         {pauseOrder && (
@@ -457,7 +564,7 @@ export const StaffPortal: React.FC<Props> = ({
                     <div key={window.id} className="bg-black/30 p-3 rounded border border-yellow-500/20">
                       <div className="flex justify-between items-center mb-2">
                         <div>
-                          <span className="font-mono">#{window.windowNumber}</span>
+                          <span className="font-mono">{window.windowNumber}</span>
                           <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
                         </div>
                         <div className="text-xs text-gray-400">当前余额: {formatWan(startBalance)}</div>
@@ -588,7 +695,7 @@ export const StaffPortal: React.FC<Props> = ({
                   <div className="text-sm text-yellow-400 font-mono mb-2">已释放的窗口:</div>
                   {activeOrder.partialResults.map((pr, idx) => (
                     <div key={idx} className="text-xs text-gray-400 flex justify-between">
-                      <span>#{pr.windowNumber} - {pr.staffName}</span>
+                      <span>{pr.windowNumber} - {pr.staffName}</span>
                       <span>消耗: <span className="text-red-400">{formatWan(pr.consumed)}</span></span>
                     </div>
                   ))}
@@ -607,7 +714,7 @@ export const StaffPortal: React.FC<Props> = ({
                     <div key={window.id} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
                       <div className="flex justify-between items-center mb-2">
                         <div>
-                          <span className="font-mono">#{window.windowNumber}</span>
+                          <span className="font-mono">{window.windowNumber}</span>
                           <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
                           {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
                         </div>
@@ -759,7 +866,7 @@ export const StaffPortal: React.FC<Props> = ({
                   <div key={window.id} className="p-3 bg-black/30 rounded border border-cyber-primary/20 group">
                     <div className="flex justify-between items-center">
                       <div>
-                        <div className="font-mono">窗口 #{window.windowNumber}</div>
+                        <div className="font-mono">窗口 {window.windowNumber}</div>
                         <div className="text-sm text-gray-400">{getMachineName(window.machineId)}</div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -839,7 +946,7 @@ export const StaffPortal: React.FC<Props> = ({
                                   onChange={e => setSelectedWindowId(e.target.value)}
                                   className="accent-cyber-primary"
                                 />
-                                <span className="font-mono">#{window.windowNumber}</span>
+                                <span className="font-mono">{window.windowNumber}</span>
                               </div>
                               <div className={`font-mono text-sm flex items-center gap-1 ${window.goldBalance < 1000000 ? 'text-red-400' : 'text-cyber-accent'}`}>
                                 <Coins size={12} />
@@ -1006,7 +1113,7 @@ export const StaffPortal: React.FC<Props> = ({
                 return (
                   <>
                     <div className="mb-4 p-3 bg-black/30 rounded">
-                      <div className="text-sm text-gray-400">窗口: <span className="text-white">#{window.windowNumber}</span></div>
+                      <div className="text-sm text-gray-400">窗口: <span className="text-white">{window.windowNumber}</span></div>
                       <div className="text-sm text-gray-400">当前余额: <span className="text-cyber-accent">{formatWan(window.goldBalance)}</span></div>
                     </div>
                     <div className="mb-4">

@@ -386,7 +386,7 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
                   <div>
                     <div className="font-mono">{req.fromTenantName} 转让窗口给你</div>
                     <div className="text-sm text-gray-400">
-                      窗口 #{req.windowInfo?.windowNumber} | 余额: {(req.windowInfo?.goldBalance / 10000).toFixed(2)} 万
+                      窗口 {req.windowInfo?.windowNumber} | 余额: {(req.windowInfo?.goldBalance / 10000).toFixed(2)} 万
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -416,7 +416,7 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
               <div key={req._id} className="p-3 bg-black/30 border border-gray-600 rounded flex justify-between items-center">
                 <div>
                   <div className="font-mono">转让给 {req.toTenantName}</div>
-                  <div className="text-sm text-gray-400">窗口 #{req.windowInfo?.windowNumber}</div>
+                  <div className="text-sm text-gray-400">窗口 {req.windowInfo?.windowNumber}</div>
                 </div>
                 <button onClick={() => handleCancelTransfer(req._id)} className="p-2 text-gray-400 hover:text-red-400">
                   <X size={16} />
@@ -596,7 +596,7 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
                                     className={`p-2 rounded cursor-pointer flex justify-between items-center ${isSelected ? 'bg-cyber-primary/20 border border-cyber-primary/50' : 'bg-black/20 hover:bg-black/40'}`}
                                   >
                                     <div className="text-sm">
-                                      <span className="font-mono">#{w.windowNumber}</span>
+                                      <span className="font-mono">{w.windowNumber}</span>
                                       <span className="text-cyber-accent ml-2">{formatWan(w.goldBalance)}</span>
                                     </div>
                                     <div className={`w-4 h-4 border rounded ${isSelected ? 'bg-cyber-primary border-cyber-primary' : 'border-gray-500'}`}>
@@ -674,7 +674,7 @@ export const Friends: React.FC<Props> = ({ tenantId, tenantName, cloudWindows, c
                           <div className="mt-1 max-h-32 overflow-y-auto">
                             {machineWindows.map(w => (
                               <div key={w.id} className="text-xs text-gray-400">
-                                #{w.windowNumber} - {formatWan(w.goldBalance)}
+                                {w.windowNumber} - {formatWan(w.goldBalance)}
                               </div>
                             ))}
                           </div>

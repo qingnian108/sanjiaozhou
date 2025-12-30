@@ -340,7 +340,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                         {staffWindows.map(window => (
                           <div key={window.id} className="p-3 bg-cyber-primary/10 border border-cyber-primary/30 rounded">
                             <div className="flex justify-between items-start mb-2">
-                              <span className="font-mono font-bold text-white">#{window.windowNumber}</span>
+                              <span className="font-mono font-bold text-white">{window.windowNumber}</span>
                               <div className="flex gap-1">
                                 <button
                                   onClick={() => setTransferWindowId(window.id)}
@@ -517,7 +517,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
             <div className="absolute bottom-0 right-0 w-16 h-[2px] bg-cyber-primary shadow-lg"></div>
             <h3 className="text-xl font-mono text-cyber-primary mb-4">转让窗口</h3>
             <p className="text-sm text-gray-400 mb-4">
-              窗口 #{cloudWindows.find(w => w.id === transferWindowId)?.windowNumber} 
+              窗口 {cloudWindows.find(w => w.id === transferWindowId)?.windowNumber} 
               → 选择目标员工
             </p>
             <select
@@ -568,7 +568,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                 <div className="text-sm text-yellow-400 font-mono mb-2">已释放的窗口:</div>
                 {activeOrder.partialResults.map((pr, idx) => (
                   <div key={idx} className="text-xs text-gray-400 flex justify-between">
-                    <span>#{pr.windowNumber} - {pr.staffName}</span>
+                    <span>{pr.windowNumber} - {pr.staffName}</span>
                     <span>消耗: <span className="text-red-400">{formatWan(pr.consumed)}</span></span>
                   </div>
                 ))}
@@ -587,7 +587,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                   <div key={window.id} className={`bg-black/30 p-3 rounded border ${inputValue === '0' ? 'border-red-500/50' : 'border-cyber-primary/20'}`}>
                     <div className="flex justify-between items-center mb-2">
                       <div>
-                        <span className="font-mono">#{window.windowNumber}</span>
+                        <span className="font-mono">{window.windowNumber}</span>
                         <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
                         {inputValue === '0' && <span className="text-xs text-red-400 ml-2">✓ 已消耗完</span>}
                       </div>

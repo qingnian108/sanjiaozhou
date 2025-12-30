@@ -216,12 +216,12 @@ export const CloudMachines: React.FC<Props> = ({
     // 批量创建云机+窗口+采购记录（一次性完成，只刷新一次）
     const windowsData = validWindows.map(w => ({
       windowNumber: w.windowNumber,
-      goldBalance: parseFloat(w.goldBalance) || 0
+      goldBalance: (parseFloat(w.goldBalance) || 0) * 10000 // 输入的是万，转成原始值
     }));
     
     const purchaseData = purchaseCost ? {
       date: today,
-      amount: totalGoldInPurchase,
+      amount: totalGoldInPurchase * 10000, // 输入的是万，转成原始值
       cost: parseFloat(purchaseCost) || 0
     } : undefined;
     
@@ -250,7 +250,8 @@ export const CloudMachines: React.FC<Props> = ({
 
   const handleAddWindow = (machineId: string) => {
     if (!windowNumber) return;
-    const goldBalance = parseFloat(windowGold) || 0;
+    const goldBalanceWan = parseFloat(windowGold) || 0;
+    const goldBalance = goldBalanceWan * 10000; // 输入的是万，转成原始值
     onAddWindow({ machineId, windowNumber, goldBalance, userId: null });
     // 如果有成本，同时添加采购记录
     if (windowCost && parseFloat(windowCost) > 0) {
@@ -494,7 +495,7 @@ export const CloudMachines: React.FC<Props> = ({
                         className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-cyber-primary text-xs font-mono mb-1">哈夫币余额</label>
+                      <label className="block text-cyber-primary text-xs font-mono mb-1">哈夫币余额(万)</label>
                       <input type="number" value={w.goldBalance} placeholder="输入哈夫币"
                         onChange={e => updateWindowRow(index, 'goldBalance', e.target.value)}
                         className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
@@ -510,7 +511,7 @@ export const CloudMachines: React.FC<Props> = ({
 
               <div className="mt-4 pt-4 border-t border-cyber-accent/20 flex justify-between items-center">
                 <div className="text-sm text-gray-400">共 {purchaseWindows.filter(w => w.windowNumber).length} 个窗口</div>
-                <div className="text-cyber-accent font-mono text-lg">总哈夫币: {formatWan(totalGoldInPurchase)}</div>
+                <div className="text-cyber-accent font-mono text-lg">总哈夫币: {totalGoldInPurchase.toLocaleString()} 万</div>
               </div>
             </div>
 
@@ -657,7 +658,7 @@ export const CloudMachines: React.FC<Props> = ({
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
                           <div className="flex-1">
-                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 哈夫币余额`}</label>
+                            <label className="block text-cyber-primary text-xs font-mono mb-1">{`> 哈夫币余额(万)`}</label>
                             <input type="number" value={windowGold} onChange={e => setWindowGold(e.target.value)} placeholder="输入哈夫币"
                               className="w-full bg-black/40 border border-cyber-primary/30 text-cyber-text font-mono px-3 py-2 text-sm" />
                           </div>
@@ -727,7 +728,7 @@ export const CloudMachines: React.FC<Props> = ({
                                         autoFocus
                                       />
                                     ) : (
-                                      <span className="font-mono text-lg">#{window.windowNumber}</span>
+                                      <span className="font-mono text-lg">{window.windowNumber}</span>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1">
@@ -807,7 +808,7 @@ export const CloudMachines: React.FC<Props> = ({
                         {requestWindow && (
                           <div className="mt-2 p-2 bg-black/30 rounded border border-cyber-primary/20">
                             <div className="text-sm text-cyber-primary">
-                              窗口 #{requestWindow.windowNumber}
+                              窗口 {requestWindow.windowNumber}
                             </div>
                             <div className="text-xs text-gray-400">
                               {requestMachine?.phone} ({requestMachine?.platform})
@@ -962,7 +963,7 @@ export const CloudMachines: React.FC<Props> = ({
               const machine = win ? machines.find(m => m.id === win.machineId) : null;
               return win ? (
                 <div className="mb-4 p-3 bg-black/30 rounded border border-green-500/20">
-                  <div className="text-sm text-gray-400">窗口: <span className="text-white font-mono">#{win.windowNumber}</span></div>
+                  <div className="text-sm text-gray-400">窗口: <span className="text-white font-mono">{win.windowNumber}</span></div>
                   <div className="text-sm text-gray-400">云机: <span className="text-white">{machine?.phone} ({machine?.platform})</span></div>
                   <div className="text-sm text-gray-400">当前余额: <span className="text-cyber-accent font-mono">{formatWan(win.goldBalance)}</span></div>
                 </div>
@@ -1016,7 +1017,7 @@ export const CloudMachines: React.FC<Props> = ({
               转让窗口
             </h3>
             <p className="text-sm text-gray-400 mb-4">
-              当前窗口: #{windows.find(w => w.id === transferWindowId)?.windowNumber} - 
+              当前窗口: {windows.find(w => w.id === transferWindowId)?.windowNumber} - 
               {getStaffName(windows.find(w => w.id === transferWindowId)?.userId || null)}
             </p>
             <select
