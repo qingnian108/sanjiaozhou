@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight, Clock, CheckCircle, Unlock } from 'lucide-react';
+import { Send, Check, Plus, Trash2, Circle, Pause, Play, ArrowRight, Clock, CheckCircle, Unlock, CheckSquare } from 'lucide-react';
 import { GlassCard, CyberInput, SectionHeader, CyberButton, useCyberModal } from './CyberUI';
 import { OrderRecord, Settings, Staff, CloudWindow, CloudMachine, WindowSnapshot, WindowResult } from '../types';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -16,6 +16,7 @@ interface Props {
   onAssignWindow: (windowId: string, userId: string | null) => void;
   onResumeOrder: (orderId: string, newStaffId?: string) => Promise<boolean>;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
+  onCompletePartialOrder?: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number) => Promise<boolean>;
   onReleaseOrderWindow: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onAddWindowToOrder: (orderId: string, windowId: string) => Promise<void>;
   onDeleteOrder: (orderId: string) => void;
@@ -33,6 +34,7 @@ export const Dispatch: React.FC<Props> = ({
   onAssignWindow,
   onResumeOrder,
   onCompleteOrder,
+  onCompletePartialOrder,
   onReleaseOrderWindow,
   onAddWindowToOrder,
   onDeleteOrder
@@ -45,7 +47,9 @@ export const Dispatch: React.FC<Props> = ({
     amount: '',
     totalPrice: '', // 总价（元）
     unitPrice: '',   // 单价（元/千万）
-    bossStartBalance: '' // 老板账号初始余额（万）
+    bossStartBalance: '', // 老板账号初始余额（万）
+    orderNumber: '', // 订单号（选填）
+    bossNickname: '' // 老板昵称（选填）
   });
 
   // 选中的窗口ID列表
@@ -70,6 +74,12 @@ export const Dispatch: React.FC<Props> = ({
   
   // 删除订单确认状态
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+
+  // 完成部分订单相关状态
+  const [partialOrderId, setPartialOrderId] = useState<string | null>(null);
+  const [partialAmount, setPartialAmount] = useState('');
+  const [partialWindowBalances, setPartialWindowBalances] = useState<Record<string, string>>({});
+  const [isCompletingPartial, setIsCompletingPartial] = useState(false);
 
   // 当前订单的窗口余额和保存状态
   const windowBalances = activeOrderId ? (orderWindowBalances[activeOrderId] || {}) : {};
@@ -193,6 +203,52 @@ export const Dispatch: React.FC<Props> = ({
       setActiveOrderId(null);
       setPendingCompleteOrder(null);
       showSuccess('操作成功', '订单已完成');
+    }
+  };
+
+  // 完成部分订单对象
+  const partialOrder = partialOrderId ? pendingOrders.find(o => o.id === partialOrderId) : null;
+
+  // 处理完成部分订单
+  const handleCompletePartialOrder = async () => {
+    if (!partialOrderId || !partialOrder || isCompletingPartial || !onCompletePartialOrder) return;
+    
+    const amount = parseFloat(partialAmount);
+    if (isNaN(amount) || amount <= 0) {
+      showAlert('输入错误', '请输入有效的完成金额');
+      return;
+    }
+    if (amount > partialOrder.amount) {
+      showAlert('输入错误', '完成金额不能大于订单金额');
+      return;
+    }
+
+    setIsCompletingPartial(true);
+    
+    try {
+      const staffWindows = cloudWindows.filter(w => w.userId === partialOrder.staffId);
+      const results: WindowResult[] = staffWindows.map(window => {
+        const endBalance = partialWindowBalances[window.id] 
+          ? parseFloat(partialWindowBalances[window.id]) * 10000
+          : window.goldBalance;
+        return {
+          windowId: window.id,
+          endBalance,
+          consumed: window.goldBalance - endBalance
+        };
+      });
+
+      const success = await onCompletePartialOrder(partialOrderId, amount, results);
+      if (success) {
+        showSuccess('操作成功', `已完成 ${amount} 万订单`);
+      } else {
+        showAlert('操作失败', '完成订单失败，请重试');
+      }
+      setPartialOrderId(null);
+      setPartialAmount('');
+      setPartialWindowBalances({});
+    } finally {
+      setIsCompletingPartial(false);
     }
   };
 
@@ -325,10 +381,12 @@ export const Dispatch: React.FC<Props> = ({
       feePercent: settings.defaultFeePercent, // 使用设置中的手续费
       unitPrice,
       status: 'pending',
-      bossStartBalance: orderForm.bossStartBalance ? parseFloat(orderForm.bossStartBalance) * 10000 : undefined
+      bossStartBalance: orderForm.bossStartBalance ? parseFloat(orderForm.bossStartBalance) * 10000 : undefined,
+      orderNumber: orderForm.orderNumber || undefined,
+      bossNickname: orderForm.bossNickname || undefined
     }, windowSnapshots);
     
-    setOrderForm({ ...orderForm, amount: '', totalPrice: '', unitPrice: '', bossStartBalance: '' });
+    setOrderForm({ ...orderForm, amount: '', totalPrice: '', unitPrice: '', bossStartBalance: '', orderNumber: '', bossNickname: '' });
     setSelectedWindowIds([]);
     showSuccess("派单成功", "订单已派发，员工可在员工端完成订单");
   };
@@ -450,6 +508,21 @@ export const Dispatch: React.FC<Props> = ({
                       >
                         <Trash2 size={14} /> 删除
                       </button>
+                      {onCompletePartialOrder && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPartialOrderId(order.id);
+                            setPartialAmount('');
+                            const balances: Record<string, string> = {};
+                            staffCurrentWindows.forEach(w => { balances[w.id] = ''; });
+                            setPartialWindowBalances(balances);
+                          }}
+                          className="px-3 py-2 bg-orange-500/20 border border-orange-500/50 text-orange-400 text-sm hover:bg-orange-500/30 flex items-center gap-1"
+                        >
+                          <CheckSquare size={14} /> 完成部分
+                        </button>
+                      )}
                       <CyberButton onClick={() => {
                         setActiveOrderId(order.id);
                         // 初始化窗口余额为员工当前窗口
@@ -648,6 +721,106 @@ export const Dispatch: React.FC<Props> = ({
         </div>
       )}
 
+      {/* 完成部分订单弹窗 */}
+      {partialOrder && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-cyber-panel border border-orange-500/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-mono text-orange-400 mb-4">完成部分订单 - {partialOrder.date}</h3>
+            
+            <div className="mb-4 p-3 bg-black/30 rounded flex justify-between items-center">
+              <div>
+                <div className="text-sm text-gray-400">订单金额</div>
+                <div className="text-2xl font-mono text-cyber-accent">{partialOrder.amount} 万</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">员工</div>
+                <div className="text-lg font-mono text-white">{getStaffName(partialOrder.staffId)}</div>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-orange-400 text-sm font-mono mb-2">实际完成金额（万）</label>
+              <input
+                type="number"
+                placeholder="输入实际完成的金额"
+                value={partialAmount}
+                onChange={e => setPartialAmount(e.target.value)}
+                className="w-full bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
+              />
+              {partialAmount && parseFloat(partialAmount) > 0 && parseFloat(partialAmount) < partialOrder.amount && (
+                <div className="text-sm text-gray-400 mt-2">
+                  将完成 <span className="text-green-400">{partialAmount}</span> 万（原订单 {partialOrder.amount} 万）
+                </div>
+              )}
+            </div>
+
+            <div className="text-sm text-orange-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）(不填则默认无消耗):</div>
+            <div className="space-y-3 mb-6">
+              {cloudWindows.filter(w => w.userId === partialOrder.staffId).map(window => {
+                const inputValue = partialWindowBalances[window.id] || '';
+                const startBalance = window.goldBalance;
+                const endBalance = inputValue ? parseFloat(inputValue) * 10000 : startBalance;
+                const consumed = startBalance - endBalance;
+                return (
+                  <div key={window.id} className="bg-black/30 p-3 rounded border border-orange-500/20">
+                    <div className="flex justify-between items-center mb-2">
+                      <div>
+                        <span className="font-mono">{window.windowNumber}</span>
+                        <span className="text-xs text-gray-500 ml-2">{getMachineName(window.machineId)}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">当前余额: {formatWan(startBalance)}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder={`${toWan(startBalance)} 万 (不填则无消耗)`}
+                        value={inputValue}
+                        onChange={e => setPartialWindowBalances({...partialWindowBalances, [window.id]: e.target.value})}
+                        className="flex-1 bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
+                      />
+                      <div className={`text-sm font-mono min-w-[70px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {formatWan(consumed)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPartialWindowBalances({...partialWindowBalances, [window.id]: String(startBalance / 10000)})}
+                        className="px-2 py-2 text-xs font-mono border border-green-500 text-green-400 hover:bg-green-500/20"
+                      >
+                        未使用
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPartialWindowBalances({...partialWindowBalances, [window.id]: '0'})}
+                        className="px-2 py-2 text-xs font-mono border border-red-500 text-red-400 hover:bg-red-500/20"
+                      >
+                        消耗完
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setPartialOrderId(null); setPartialAmount(''); setPartialWindowBalances({}); }} 
+                disabled={isCompletingPartial}
+                className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button 
+                onClick={handleCompletePartialOrder} 
+                disabled={!partialAmount || parseFloat(partialAmount) <= 0 || isCompletingPartial}
+                className="flex-1 py-2 bg-orange-500/20 border border-orange-500 text-orange-400 hover:bg-orange-500/30 disabled:opacity-50"
+              >
+                {isCompletingPartial ? '处理中...' : '确认完成'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 释放窗口确认弹窗 - 使用当前窗口信息 */}
       {releaseWindowId && activeOrder && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
@@ -766,8 +939,8 @@ export const Dispatch: React.FC<Props> = ({
             />
           </div>
 
-          {/* 老板账号余额 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 老板账号余额、订单号、老板昵称 */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <CyberInput
               label="老板账号余额 (万)"
               type="number"
@@ -775,6 +948,20 @@ export const Dispatch: React.FC<Props> = ({
               value={orderForm.bossStartBalance}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, bossStartBalance: e.target.value})}
               placeholder="打之前的账号余额（选填）"
+            />
+            <CyberInput
+              label="订单号"
+              type="text"
+              value={orderForm.orderNumber}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, orderNumber: e.target.value})}
+              placeholder="选填"
+            />
+            <CyberInput
+              label="老板昵称"
+              type="text"
+              value={orderForm.bossNickname}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderForm({...orderForm, bossNickname: e.target.value})}
+              placeholder="选填"
             />
           </div>
 

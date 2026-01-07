@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock, Plus, ExternalLink } from 'lucide-react';
+import { Users, UserPlus, Trash2, Search, Crosshair, Monitor, X, ArrowRight, Clock, CheckCircle, Unlock, Plus, ExternalLink, Download } from 'lucide-react';
 import { GlassCard, CyberInput, NeonButton, SectionHeader, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { Staff, OrderRecord, Settings, CloudWindow, CloudMachine, WindowResult } from '../types';
 import { calculateStaffStats, formatCurrency, formatNumber, formatChineseNumber, formatWan, toWan } from '../utils';
@@ -38,6 +38,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
   const [orderWindowBalances, setOrderWindowBalances] = useState<Record<string, Record<string, string>>>({});
   const [pendingCompleteOrder, setPendingCompleteOrder] = useState<{ order: OrderRecord; results: WindowResult[] } | null>(null);
   
+  // 作业记录筛选状态
+  const [recordPeriod, setRecordPeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  
   const { showAlert, showSuccess, ModalComponent } = useCyberModal();
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -71,12 +76,132 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
 
   const filteredStats = staffStats.filter(s => s.staff.name.toLowerCase().includes(filterName.toLowerCase()));
 
+  const today = new Date().toISOString().split('T')[0];
+  
+  // 获取昨天日期
+  const getYesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  };
+  
+  // 获取周期的起始日期
+  const getPeriodStartDate = (period: 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom') => {
+    const now = new Date();
+    if (period === 'today') return today;
+    if (period === 'yesterday') return getYesterday();
+    if (period === 'week') {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      return weekStart.toISOString().split('T')[0];
+    }
+    if (period === 'month') {
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    }
+    if (period === 'custom') return customStartDate;
+    return ''; // all
+  };
+  
+  const getPeriodEndDate = (period: 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom') => {
+    if (period === 'yesterday') return getYesterday();
+    if (period === 'custom') return customEndDate;
+    return today;
+  };
+
+  // 筛选后的员工订单记录
+  const filteredStaffRecords = useMemo(() => {
+    if (!selectedStaffId) return [];
+    const startDate = getPeriodStartDate(recordPeriod);
+    const endDate = getPeriodEndDate(recordPeriod);
+    return orders.filter(o => {
+      if (o.staffId !== selectedStaffId) return false;
+      if (recordPeriod === 'all') return true;
+      return o.date >= startDate && o.date <= endDate;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [orders, selectedStaffId, recordPeriod, customStartDate, customEndDate]);
+
+  // 筛选后的统计
+  const filteredRecordStats = useMemo(() => {
+    const totalAmount = filteredStaffRecords.reduce((sum, o) => sum + o.amount, 0);
+    const totalLoss = filteredStaffRecords.reduce((sum, o) => sum + (o.loss || 0), 0);
+    return { total: filteredStaffRecords.length, totalAmount, totalLoss };
+  }, [filteredStaffRecords]);
+
   const selectedStaffDetail = selectedStaffId 
     ? {
         stats: staffStats.find(s => s.staff.id === selectedStaffId),
-        records: orders.filter(o => o.staffId === selectedStaffId).sort((a,b) => b.date.localeCompare(a.date))
+        records: filteredStaffRecords
       }
     : null;
+
+  // 导出员工订单
+  const handleExportStaffOrders = () => {
+    if (!selectedStaffDetail || filteredStaffRecords.length === 0) {
+      showAlert('无数据', '当前筛选条件下没有可导出的订单');
+      return;
+    }
+
+    const staffName = selectedStaffDetail.stats?.staff.name || '未知';
+    
+    // CSV表头
+    const headers = ['日期', '订单号', '老板昵称', '单价(元/千万)', '订单金额(万)', '损耗(万)', '损耗比(%)', '状态'];
+    
+    // CSV数据行
+    const rows = filteredStaffRecords.map(r => {
+      const lossInWan = (r.loss || 0) / 10000;
+      const lossRatio = r.amount > 0 ? (lossInWan / r.amount * 100).toFixed(2) : '0';
+      return [
+        r.date,
+        r.orderNumber || '',
+        r.bossNickname || '',
+        (r.unitPrice ?? settings.orderUnitPrice).toString(),
+        r.amount.toString(),
+        lossInWan.toFixed(2),
+        lossRatio,
+        r.status === 'completed' ? '已完成' : r.status === 'pending' ? '进行中' : '暂停'
+      ];
+    });
+
+    // 添加汇总行
+    rows.push([]);
+    rows.push([
+      '汇总',
+      '',
+      '',
+      '-',
+      filteredRecordStats.totalAmount.toString(),
+      (filteredRecordStats.totalLoss / 10000).toFixed(2),
+      filteredRecordStats.totalAmount > 0 
+        ? ((filteredRecordStats.totalLoss / 10000 / filteredRecordStats.totalAmount) * 100).toFixed(2)
+        : '0',
+      ''
+    ]);
+
+    // 生成CSV内容（添加BOM以支持中文）
+    const BOM = '\uFEFF';
+    const csvContent = BOM + [headers, ...rows].map(row => row.join(',')).join('\n');
+    
+    // 创建下载
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // 文件名包含员工名和日期范围
+    const startDate = getPeriodStartDate(recordPeriod);
+    const endDate = getPeriodEndDate(recordPeriod);
+    const fileName = recordPeriod === 'all' 
+      ? `${staffName}_订单导出_全部.csv`
+      : `${staffName}_订单导出_${startDate}_${endDate}.csv`;
+    
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showSuccess('导出成功', `已导出 ${filteredStaffRecords.length} 条订单记录`);
+  };
 
   // 获取员工的窗口
   const getStaffWindows = (staffId: string) => cloudWindows.filter(w => w.userId === staffId);
@@ -423,9 +548,69 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
               })()}
 
               <GlassCard>
-                <h3 className="text-cyber-secondary font-mono text-sm mb-4 flex items-center gap-2 border-b border-gray-800 pb-2 font-bold uppercase tracking-wider">
-                  <Crosshair size={16} className="text-cyber-secondary" /> {selectedStaffDetail.stats.staff.name} // 作业记录明细
-                </h3>
+                <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
+                  <h3 className="text-cyber-secondary font-mono text-sm flex items-center gap-2 font-bold uppercase tracking-wider">
+                    <Crosshair size={16} className="text-cyber-secondary" /> {selectedStaffDetail.stats.staff.name} // 作业记录明细
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleExportStaffOrders}
+                      className="px-2 py-1 text-xs bg-green-500/20 border border-green-500/50 text-green-400 hover:bg-green-500/30 flex items-center gap-1"
+                      title="导出当前筛选的订单"
+                    >
+                      <Download size={12} /> 导出
+                    </button>
+                  </div>
+                </div>
+                
+                {/* 日期筛选 */}
+                <div className="flex items-center gap-2 mb-4 flex-wrap">
+                  {[
+                    { key: 'today', label: '今天' },
+                    { key: 'yesterday', label: '昨天' },
+                    { key: 'week', label: '本周' },
+                    { key: 'month', label: '本月' },
+                    { key: 'all', label: '全部' },
+                    { key: 'custom', label: '自定义' }
+                  ].map(p => (
+                    <button
+                      key={p.key}
+                      onClick={() => setRecordPeriod(p.key as any)}
+                      className={`px-2 py-1 text-xs font-mono border ${
+                        recordPeriod === p.key
+                          ? 'bg-cyber-secondary/20 border-cyber-secondary text-cyber-secondary'
+                          : 'border-gray-600 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                  <span className="text-xs text-gray-400 ml-2">
+                    共 <span className="text-cyber-secondary">{filteredRecordStats.total}</span> 单 | 
+                    <span className="text-cyber-accent ml-1">{filteredRecordStats.totalAmount}</span> 万
+                  </span>
+                </div>
+                
+                {/* 自定义日期范围 */}
+                {recordPeriod === 'custom' && (
+                  <div className="flex items-center gap-2 mb-4 p-2 bg-black/30 rounded border border-cyber-secondary/20">
+                    <span className="text-xs text-gray-400">从</span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={e => setCustomStartDate(e.target.value)}
+                      className="bg-black/40 border border-cyber-secondary/30 text-cyber-text font-mono px-2 py-1 text-xs"
+                    />
+                    <span className="text-xs text-gray-400">到</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={e => setCustomEndDate(e.target.value)}
+                      className="bg-black/40 border border-cyber-secondary/30 text-cyber-text font-mono px-2 py-1 text-xs"
+                    />
+                  </div>
+                )}
+                
                 <div className="overflow-x-auto">
                   <table className="w-full text-left font-mono text-sm">
                     <thead>
@@ -439,7 +624,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800">
-                      {selectedStaffDetail.records.map(r => {
+                      {selectedStaffDetail.records.length > 0 ? selectedStaffDetail.records.map(r => {
                         const lossInWan = (r.loss || 0) / 10000;
                         const lossRatio = r.amount > 0 ? (lossInWan / r.amount * 100).toFixed(2) : '0';
                         return (
@@ -459,22 +644,28 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                             </td>
                           </tr>
                         );
-                      })}
+                      }) : (
+                        <tr>
+                          <td colSpan={6} className="p-6 text-center text-gray-500">该周期暂无订单记录</td>
+                        </tr>
+                      )}
                     </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-cyber-primary/50 bg-cyber-primary/10 font-bold">
-                        <td className="p-3 text-cyber-primary">合计</td>
-                        <td className="p-3">-</td>
-                        <td className="p-3 text-cyber-primary">{formatNumber(selectedStaffDetail.stats.totalAmount)}</td>
-                        <td className="p-3 text-red-500">{toWan(selectedStaffDetail.stats.totalLoss)}</td>
-                        <td className="p-3 text-yellow-500">
-                          {selectedStaffDetail.stats.totalAmount > 0 
-                            ? ((selectedStaffDetail.stats.totalLoss / 10000 / selectedStaffDetail.stats.totalAmount) * 100).toFixed(2)
-                            : '0'}%
-                        </td>
-                        <td className="p-3"></td>
-                      </tr>
-                    </tfoot>
+                    {selectedStaffDetail.records.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-cyber-primary/50 bg-cyber-primary/10 font-bold">
+                          <td className="p-3 text-cyber-primary">合计</td>
+                          <td className="p-3">-</td>
+                          <td className="p-3 text-cyber-primary">{formatNumber(filteredRecordStats.totalAmount)}</td>
+                          <td className="p-3 text-red-500">{toWan(filteredRecordStats.totalLoss)}</td>
+                          <td className="p-3 text-yellow-500">
+                            {filteredRecordStats.totalAmount > 0 
+                              ? ((filteredRecordStats.totalLoss / 10000 / filteredRecordStats.totalAmount) * 100).toFixed(2)
+                              : '0'}%
+                          </td>
+                          <td className="p-3"></td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </GlassCard>

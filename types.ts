@@ -36,6 +36,8 @@ export interface OrderRecord {
   originalOrderId?: string; // 原始订单ID（整个订单链的第一个订单）
   bossStartBalance?: number; // 老板账号初始余额（派单时填写）
   bossEndBalance?: number; // 老板账号结束余额（完成时记录）
+  orderNumber?: string; // 订单号（选填）
+  bossNickname?: string; // 老板昵称（选填）
 }
 
 // 中途释放的窗口结果

@@ -146,6 +146,7 @@ const AdminApp: React.FC<{
     rechargeWindow,
     refreshData,
     completeOrder,
+    completePartialOrder,
     releaseOrderWindow,
     addWindowToOrder,
     revertOrder
@@ -319,7 +320,7 @@ const AdminApp: React.FC<{
 
           <Routes>
             <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} onRevertOrder={revertOrder} />} />
-            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onCompletePartialOrder={completePartialOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
@@ -361,7 +362,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
     cloudWindows,
     windowRequests,
     completeOrder,
-    pauseOrder,
+    completePartialOrder,
     createWindowRequest,
     releaseOrderWindow,
     deleteOrder,
@@ -387,7 +388,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
       windowRequests={windowRequests}
       onLogout={onLogout}
       onCompleteOrder={completeOrder}
-      onPauseOrder={pauseOrder}
+      onCompletePartialOrder={completePartialOrder}
       onRequestWindow={createWindowRequest}
       onReleaseOrderWindow={releaseOrderWindow}
       onDeleteOrder={deleteOrder}
@@ -401,7 +402,8 @@ const DispatcherApp: React.FC<{
   tenantName: string;
   username: string;
   onLogout: () => void;
-}> = ({ tenantId, tenantName, username, onLogout }) => {
+  onLoginAsStaff?: (staffId: string, staffName: string) => void;
+}> = ({ tenantId, tenantName, username, onLogout, onLoginAsStaff }) => {
   const {
     orders,
     staffList,
@@ -428,6 +430,7 @@ const DispatcherApp: React.FC<{
     resumeOrder,
     processWindowRequest,
     completeOrder,
+    completePartialOrder,
     releaseOrderWindow,
     addWindowToOrder
   } = useFirestore(tenantId);
@@ -592,8 +595,8 @@ const DispatcherApp: React.FC<{
 
           <Routes>
             <Route path="/" element={<Dashboard globalStats={dispatcherStats.globalStats} dailyStats={dispatcherStats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={[]} settings={settings} onDeleteOrder={handleDeleteOrder} isDispatcher={true} />} />
-            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
-            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={async () => {}} onDeleteStaff={() => {}} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} isDispatcher={true} />} />
+            <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onCompletePartialOrder={completePartialOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
+            <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={async () => {}} onDeleteStaff={() => {}} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} isDispatcher={true} />} />
             <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={[]} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={async () => {}} onDeletePurchase={async () => {}} onUpdatePurchase={async () => {}} onProcessRequest={processWindowRequest} onRechargeWindow={async () => {}} isDispatcher={true} />} />
           </Routes>
@@ -766,7 +769,35 @@ const App: React.FC = () => {
 
   // 客服显示客服端
   if (isDispatcher) {
-    return <DispatcherApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} username={staffInfo.username} onLogout={logout} />;
+    // 如果正在以员工身份查看
+    if (impersonatedStaff) {
+      const fakeStaffInfo = {
+        id: impersonatedStaff.staffId,
+        name: impersonatedStaff.staffName,
+        role: 'staff',
+        tenantId: staffInfo.tenantId
+      };
+      return (
+        <div>
+          {/* 顶部提示条 */}
+          <div className="fixed top-0 left-0 right-0 bg-purple-600 text-white py-2 px-4 flex justify-between items-center z-[100]">
+            <span className="font-mono text-sm">
+              👁️ 员工视角 - 正在查看: <strong>{impersonatedStaff.staffName}</strong>
+            </span>
+            <button
+              onClick={handleBackFromStaff}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm"
+            >
+              返回客服后台
+            </button>
+          </div>
+          <div className="pt-10">
+            <StaffApp staffInfo={fakeStaffInfo} tenantId={staffInfo.tenantId} onLogout={handleBackFromStaff} />
+          </div>
+        </div>
+      );
+    }
+    return <DispatcherApp tenantId={staffInfo.tenantId} tenantName={staffInfo.name} username={staffInfo.username} onLogout={logout} onLoginAsStaff={handleLoginAsStaff} />;
   }
 
   // 员工显示员工端

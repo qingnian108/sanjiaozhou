@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Activity, Clock, CheckCircle, Trash2, RotateCcw } from 'lucide-react';
+import { Activity, Clock, CheckCircle, Trash2, RotateCcw, Download } from 'lucide-react';
 import { GlassCard, StatBox, SectionHeader, useCyberModal } from './CyberUI';
 import { GlobalStats, DailyStats, OrderRecord, Staff, CloudWindow, PurchaseRecord, Settings } from '../types';
 import { formatCurrency, formatWan } from '../utils';
@@ -188,6 +188,76 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
     }
   };
 
+  // 导出订单为CSV
+  const handleExportOrders = () => {
+    if (completedOrders.length === 0) {
+      showAlert('无数据', '当前筛选条件下没有可导出的订单');
+      return;
+    }
+
+    // CSV表头
+    const headers = ['日期', '订单号', '老板昵称', '员工', '订单金额(万)', '损耗(万)', '单价(元/千万)', '收入(元)', '利润(元)', '状态'];
+    
+    // CSV数据行
+    const rows = completedOrders.map(order => {
+      const revenue = getOrderRevenue(order);
+      const profit = getOrderProfit(order);
+      const lossInWan = (order.loss || 0) / 10000;
+      return [
+        order.date,
+        order.orderNumber || '',
+        order.bossNickname || '',
+        getStaffName(order.staffId),
+        order.amount.toString(),
+        lossInWan.toFixed(2),
+        order.unitPrice.toString(),
+        revenue.toFixed(2),
+        profit.toFixed(2),
+        '已完成'
+      ];
+    });
+
+    // 添加汇总行
+    rows.push([]);
+    rows.push([
+      '汇总',
+      '',
+      '',
+      `共${completedStats.total}单`,
+      completedStats.totalAmount.toString(),
+      (completedStats.totalLoss / 10000).toFixed(2),
+      '',
+      completedStats.totalRevenue.toFixed(2),
+      completedStats.totalProfit.toFixed(2),
+      ''
+    ]);
+
+    // 生成CSV内容（添加BOM以支持中文）
+    const BOM = '\uFEFF';
+    const csvContent = BOM + [headers, ...rows].map(row => row.join(',')).join('\n');
+    
+    // 创建下载
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // 文件名包含日期范围
+    const startDate = getPeriodStartDate(recordPeriod);
+    const endDate = getPeriodEndDate(recordPeriod);
+    const fileName = recordPeriod === 'all' 
+      ? `订单导出_全部.csv`
+      : `订单导出_${startDate}_${endDate}.csv`;
+    
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showSuccess('导出成功', `已导出 ${completedOrders.length} 条订单记录`);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <SectionHeader title="指挥中心 // 资产总览" icon={Activity} />
@@ -302,6 +372,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-green-400 font-mono text-sm flex items-center gap-2">
               <CheckCircle size={16} /> 已完成订单记录
+              <button
+                onClick={handleExportOrders}
+                className="ml-2 px-2 py-1 text-xs bg-green-500/20 border border-green-500/50 text-green-400 hover:bg-green-500/30 flex items-center gap-1"
+                title="导出当前筛选的订单"
+              >
+                <Download size={12} /> 导出
+              </button>
             </h3>
             <div className="flex items-center gap-4">
               <div className="flex gap-1">

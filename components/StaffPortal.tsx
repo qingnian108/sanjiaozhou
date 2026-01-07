@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Pause, Plus, Server, Unlock, Trash2, Calculator } from 'lucide-react';
+import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Plus, Server, Unlock, Trash2, Calculator, CheckSquare } from 'lucide-react';
 import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult, WindowRequest } from '../types';
 import { GlassCard, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
@@ -14,7 +14,7 @@ interface Props {
   windowRequests: WindowRequest[];
   onLogout: () => void;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
-  onPauseOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[]) => Promise<boolean>;
+  onCompletePartialOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number) => Promise<boolean>;
   onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
   onReleaseOrderWindow?: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onDeleteOrder?: (orderId: string) => void;
@@ -30,7 +30,7 @@ export const StaffPortal: React.FC<Props> = ({
   windowRequests,
   onLogout,
   onCompleteOrder,
-  onPauseOrder,
+  onCompletePartialOrder,
   onRequestWindow,
   onReleaseOrderWindow,
   onDeleteOrder
@@ -62,10 +62,10 @@ export const StaffPortal: React.FC<Props> = ({
   const [periodFilter, setPeriodFilter] = useState<'today' | 'week' | 'month' | 'all' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [pauseOrderId, setPauseOrderId] = useState<string | null>(null); // 暂停订单ID
-  const [pauseAmount, setPauseAmount] = useState(''); // 暂停时已完成金额
-  const [pauseWindowBalances, setPauseWindowBalances] = useState<Record<string, string>>({}); // 暂停时窗口余额
-  const [isPausingOrder, setIsPausingOrder] = useState(false); // 防止重复点击
+  const [partialOrderId, setPartialOrderId] = useState<string | null>(null); // 完成部分订单ID
+  const [partialAmount, setPartialAmount] = useState(''); // 完成部分金额
+  const [partialWindowBalances, setPartialWindowBalances] = useState<Record<string, string>>({}); // 完成部分时窗口余额
+  const [isCompletingPartial, setIsCompletingPartial] = useState(false); // 防止重复点击
   const [showWindowSelectModal, setShowWindowSelectModal] = useState(false);
   const [selectedWindowId, setSelectedWindowId] = useState('');
   const [releaseMyWindowId, setReleaseMyWindowId] = useState<string | null>(null);
@@ -152,8 +152,13 @@ export const StaffPortal: React.FC<Props> = ({
     return { orderCount, totalAmount, totalLoss, todayIncome };
   }, [myOrders, settings.employeeCostRate]);
 
-  // 我的云机窗口
-  const myWindows = useMemo(() => cloudWindows.filter(w => w.userId === staff.id), [cloudWindows, staff.id]);
+  // 我的云机窗口（按余额从低到高排序）
+  const myWindows = useMemo(() => 
+    cloudWindows
+      .filter(w => w.userId === staff.id)
+      .sort((a, b) => a.goldBalance - b.goldBalance), 
+    [cloudWindows, staff.id]
+  );
 
   // 空闲窗口（可申请的）
   const freeWindows = useMemo(() => cloudWindows.filter(w => !w.userId), [cloudWindows]);
@@ -178,30 +183,30 @@ export const StaffPortal: React.FC<Props> = ({
       : '验证码登录';
   };
 
-  // 暂停订单对象
-  const pauseOrder = pauseOrderId ? pendingOrders.find(o => o.id === pauseOrderId) : null;
+  // 完成部分订单对象
+  const partialOrder = partialOrderId ? pendingOrders.find(o => o.id === partialOrderId) : null;
 
-  // 处理暂停订单
-  const handlePauseOrder = async () => {
-    if (!pauseOrderId || !pauseOrder || isPausingOrder) return;
+  // 处理完成部分订单
+  const handleCompletePartialOrder = async () => {
+    if (!partialOrderId || !partialOrder || isCompletingPartial) return;
     
-    const amount = parseFloat(pauseAmount);
+    const amount = parseFloat(partialAmount);
     if (isNaN(amount) || amount <= 0) {
-      showAlert('输入错误', '请输入有效的已完成金额');
+      showAlert('输入错误', '请输入有效的完成金额');
       return;
     }
-    if (amount > pauseOrder.amount) {
-      showAlert('输入错误', '已完成金额不能大于订单金额');
+    if (amount > partialOrder.amount) {
+      showAlert('输入错误', '完成金额不能大于订单金额');
       return;
     }
 
-    setIsPausingOrder(true); // 开始处理，禁用按钮
+    setIsCompletingPartial(true); // 开始处理，禁用按钮
     
     try {
       // 构建窗口结果
       const results: WindowResult[] = myWindows.map(window => {
-        const endBalance = pauseWindowBalances[window.id] 
-          ? parseFloat(pauseWindowBalances[window.id]) * 10000
+        const endBalance = partialWindowBalances[window.id] 
+          ? parseFloat(partialWindowBalances[window.id]) * 10000
           : window.goldBalance;
         return {
           windowId: window.id,
@@ -210,17 +215,21 @@ export const StaffPortal: React.FC<Props> = ({
         };
       });
 
-      const success = await onPauseOrder(pauseOrderId, amount, results);
+      // 获取老板账号结束余额
+      const bossEndBalance = bossEndBalances[partialOrderId] ? parseFloat(bossEndBalances[partialOrderId]) * 10000 : undefined;
+
+      const success = await onCompletePartialOrder(partialOrderId, amount, results, bossEndBalance);
       if (success) {
-        showSuccess('操作成功', '订单已暂停，剩余部分已创建新订单');
+        showSuccess('操作成功', `已完成 ${amount} 万订单`);
       } else {
-        showAlert('操作失败', '暂停订单失败，请重试');
+        showAlert('操作失败', '完成订单失败，请重试');
       }
-      setPauseOrderId(null);
-      setPauseAmount('');
-      setPauseWindowBalances({});
+      setPartialOrderId(null);
+      setPartialAmount('');
+      setPartialWindowBalances({});
+      setBossEndBalances(prev => { const n = {...prev}; delete n[partialOrderId]; return n; });
     } finally {
-      setIsPausingOrder(false); // 处理完成，恢复按钮
+      setIsCompletingPartial(false); // 处理完成，恢复按钮
     }
   };
 
@@ -408,16 +417,16 @@ export const StaffPortal: React.FC<Props> = ({
                       )}
                       <button
                         onClick={() => {
-                          setPauseOrderId(order.id);
-                          setPauseAmount('');
-                          // 初始化暂停窗口余额
+                          setPartialOrderId(order.id);
+                          setPartialAmount('');
+                          // 初始化窗口余额
                           const balances: Record<string, string> = {};
                           myWindows.forEach(w => { balances[w.id] = ''; });
-                          setPauseWindowBalances(balances);
+                          setPartialWindowBalances(balances);
                         }}
-                        className="px-3 py-2 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-1 text-sm"
+                        className="px-3 py-2 border border-orange-500/50 text-orange-400 hover:bg-orange-500/20 flex items-center gap-1 text-sm"
                       >
-                        <Pause size={14} /> 暂停
+                        <CheckSquare size={14} /> 完成部分
                       </button>
                       <CyberButton onClick={() => {
                         setActiveOrderId(order.id);
@@ -428,7 +437,7 @@ export const StaffPortal: React.FC<Props> = ({
                         });
                         setWindowBalances(balances);
                       }}>
-                        填写结果
+                        完成全部
                       </CyberButton>
                     </div>
                   </div>
@@ -445,8 +454,12 @@ export const StaffPortal: React.FC<Props> = ({
           
           const bossStartWan = calcOrder.bossStartBalance / 10000; // 老板初始余额（万）
           const currentBalanceWan = calcCurrentBalance ? parseFloat(calcCurrentBalance) : null; // 当前余额（万）
-          const completedWan = currentBalanceWan !== null ? bossStartWan - currentBalanceWan : null; // 已打（万）
-          const remainingWan = currentBalanceWan !== null ? calcOrder.amount - completedWan! : calcOrder.amount; // 剩余（万）
+          // 已打 = 当前余额 - 老板初始余额（打金是增加余额）
+          const completedWan = currentBalanceWan !== null ? currentBalanceWan - bossStartWan : null;
+          // 剩余 = 订单金额 - 已打
+          const remainingWan = completedWan !== null ? calcOrder.amount - completedWan : calcOrder.amount;
+          // 预估到达金额 = 订单金额 + 老板初始余额
+          const expectedFinalWan = calcOrder.amount + bossStartWan;
           
           return (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -458,7 +471,7 @@ export const StaffPortal: React.FC<Props> = ({
                 <div className="space-y-4">
                   {/* 订单信息 */}
                   <div className="p-3 bg-black/30 rounded border border-purple-500/20">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       <div>
                         <div className="text-xs text-gray-400">订单金额</div>
                         <div className="font-mono text-lg text-cyber-accent">{calcOrder.amount} 万</div>
@@ -466,6 +479,10 @@ export const StaffPortal: React.FC<Props> = ({
                       <div>
                         <div className="text-xs text-gray-400">老板初始余额</div>
                         <div className="font-mono text-lg text-purple-400">{bossStartWan} 万</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-400">预估到达</div>
+                        <div className="font-mono text-lg text-cyan-400">{expectedFinalWan} 万</div>
                       </div>
                     </div>
                   </div>
@@ -507,7 +524,7 @@ export const StaffPortal: React.FC<Props> = ({
                       )}
                       {completedWan! < 0 && (
                         <div className="mt-3 text-center text-red-400 text-sm">
-                          ⚠ 当前余额大于初始余额，请检查输入
+                          ⚠ 当前余额小于初始余额，请检查输入
                         </div>
                       )}
                     </div>
@@ -527,41 +544,64 @@ export const StaffPortal: React.FC<Props> = ({
           );
         })()}
 
-        {/* 暂停订单弹窗 - 需要填写窗口余额 */}
-        {pauseOrder && (
+        {/* 完成部分订单弹窗 */}
+        {partialOrder && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-cyber-panel border border-yellow-500/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h3 className="text-xl font-mono text-yellow-400 mb-4">暂停订单 - {pauseOrder.date}</h3>
+            <div className="bg-cyber-panel border border-orange-500/30 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h3 className="text-xl font-mono text-orange-400 mb-4">完成部分订单 - {partialOrder.date}</h3>
               
               <div className="mb-4 p-3 bg-black/30 rounded">
-                <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent text-lg">{pauseOrder.amount}</span> 万</div>
+                <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent text-lg">{partialOrder.amount}</span> 万</div>
               </div>
 
+              {/* 老板账号余额 */}
+              {partialOrder.bossStartBalance !== undefined && (
+                <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded">
+                  <div className="text-sm text-purple-400 font-mono mb-2">老板账号余额</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-400">打之前</div>
+                      <div className="text-lg font-mono text-purple-400">{formatWan(partialOrder.bossStartBalance)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-400">打之后（请填写）</div>
+                      <input
+                        type="number"
+                        placeholder="输入结束余额（万）"
+                        value={bossEndBalances[partialOrder.id] || ''}
+                        onChange={e => setBossEndBalances({...bossEndBalances, [partialOrder.id]: e.target.value})}
+                        className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="mb-4">
-                <label className="block text-yellow-400 text-sm font-mono mb-2">已完成金额（万）</label>
+                <label className="block text-orange-400 text-sm font-mono mb-2">实际完成金额（万）</label>
                 <input
                   type="number"
-                  placeholder="输入已完成的金额"
-                  value={pauseAmount}
-                  onChange={e => setPauseAmount(e.target.value)}
-                  className="w-full bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2"
+                  placeholder="输入实际完成的金额"
+                  value={partialAmount}
+                  onChange={e => setPartialAmount(e.target.value)}
+                  className="w-full bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
                 />
-                {pauseAmount && parseFloat(pauseAmount) > 0 && (
+                {partialAmount && parseFloat(partialAmount) > 0 && parseFloat(partialAmount) < partialOrder.amount && (
                   <div className="text-sm text-gray-400 mt-2">
-                    剩余金额: <span className="text-orange-400">{pauseOrder.amount - parseFloat(pauseAmount)}</span> 万（将创建新订单）
+                    将完成 <span className="text-green-400">{partialAmount}</span> 万（原订单 {partialOrder.amount} 万）
                   </div>
                 )}
               </div>
 
-              <div className="text-sm text-yellow-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）:</div>
+              <div className="text-sm text-orange-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）:</div>
               <div className="space-y-3 mb-6">
                 {myWindows.map(window => {
-                  const inputValue = pauseWindowBalances[window.id] || '';
+                  const inputValue = partialWindowBalances[window.id] || '';
                   const startBalance = window.goldBalance;
                   const endBalance = inputValue ? parseFloat(inputValue) * 10000 : startBalance;
                   const consumed = startBalance - endBalance;
                   return (
-                    <div key={window.id} className="bg-black/30 p-3 rounded border border-yellow-500/20">
+                    <div key={window.id} className="bg-black/30 p-3 rounded border border-orange-500/20">
                       <div className="flex justify-between items-center mb-2">
                         <div>
                           <span className="font-mono">{window.windowNumber}</span>
@@ -574,21 +614,21 @@ export const StaffPortal: React.FC<Props> = ({
                           type="number"
                           placeholder={`${toWan(startBalance)} 万 (不填则无消耗)`}
                           value={inputValue}
-                          onChange={e => setPauseWindowBalances({...pauseWindowBalances, [window.id]: e.target.value})}
-                          className="flex-1 bg-black/40 border border-yellow-500/30 text-cyber-text font-mono px-3 py-2"
+                          onChange={e => setPartialWindowBalances({...partialWindowBalances, [window.id]: e.target.value})}
+                          className="flex-1 bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
                         />
                         <div className={`text-sm font-mono min-w-[70px] ${consumed > 0 ? 'text-red-400' : 'text-green-400'}`}>
                           {formatWan(consumed)}
                         </div>
                         <button
-                          onClick={() => setPauseWindowBalances({...pauseWindowBalances, [window.id]: String(startBalance / 10000)})}
+                          onClick={() => setPartialWindowBalances({...partialWindowBalances, [window.id]: String(startBalance / 10000)})}
                           className="px-2 py-2 text-xs font-mono border border-green-500 text-green-400 hover:bg-green-500/20"
                         >
                           未使用
                         </button>
                         <button
-                          onClick={() => setPauseWindowBalances({...pauseWindowBalances, [window.id]: '0'})}
-                          className="px-2 py-2 text-xs font-mono border border-orange-500 text-orange-400 hover:bg-orange-500/20"
+                          onClick={() => setPartialWindowBalances({...partialWindowBalances, [window.id]: '0'})}
+                          className="px-2 py-2 text-xs font-mono border border-red-500 text-red-400 hover:bg-red-500/20"
                         >
                           消耗完
                         </button>
@@ -600,18 +640,18 @@ export const StaffPortal: React.FC<Props> = ({
 
               <div className="flex gap-3">
                 <button 
-                  onClick={() => { setPauseOrderId(null); setPauseAmount(''); setPauseWindowBalances({}); }} 
-                  disabled={isPausingOrder}
+                  onClick={() => { setPartialOrderId(null); setPartialAmount(''); setPartialWindowBalances({}); }} 
+                  disabled={isCompletingPartial}
                   className="flex-1 py-2 border border-gray-600 text-gray-400 hover:bg-gray-800 disabled:opacity-50"
                 >
                   取消
                 </button>
                 <button 
-                  onClick={handlePauseOrder} 
-                  disabled={!pauseAmount || parseFloat(pauseAmount) <= 0 || isPausingOrder}
-                  className="flex-1 py-2 bg-yellow-500/20 border border-yellow-500 text-yellow-400 hover:bg-yellow-500/30 disabled:opacity-50"
+                  onClick={handleCompletePartialOrder} 
+                  disabled={!partialAmount || parseFloat(partialAmount) <= 0 || isCompletingPartial}
+                  className="flex-1 py-2 bg-orange-500/20 border border-orange-500 text-orange-400 hover:bg-orange-500/30 disabled:opacity-50"
                 >
-                  {isPausingOrder ? '处理中...' : '确认暂停'}
+                  {isCompletingPartial ? '处理中...' : '确认完成'}
                 </button>
               </div>
             </div>
@@ -622,7 +662,7 @@ export const StaffPortal: React.FC<Props> = ({
         {pausedOrders.length > 0 && (
           <GlassCard className="mb-6">
             <div className="flex items-center gap-2 mb-4 text-orange-400">
-              <Pause size={20} />
+              <Clock size={20} />
               <h2 className="font-mono text-lg">暂停中的订单 ({pausedOrders.length})</h2>
             </div>
             <div className="space-y-3">

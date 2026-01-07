@@ -149,6 +149,59 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
+  // 完成部分订单（不创建新订单）
+  const completePartialOrder = async (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number): Promise<boolean> => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return false;
+
+    const currentStaff = staffList.find(s => s.id === order.staffId);
+    const staffName = currentStaff?.name || '未知';
+    
+    // 计算当前窗口的消耗
+    const currentConsumed = windowResults.reduce((sum, r) => sum + r.consumed, 0);
+    // 加上中途释放窗口的消耗
+    const partialConsumed = order.partialResults?.reduce((sum, pr) => sum + pr.consumed, 0) || 0;
+    // 总消耗
+    const totalConsumed = currentConsumed + partialConsumed;
+    const orderAmountInCoins = completedAmount * 10000;
+    const loss = totalConsumed - orderAmountInCoins;
+
+    // 完成订单（使用实际完成的金额）
+    const executionHistory = [...(order.executionHistory || []), {
+      staffId: order.staffId,
+      staffName,
+      amount: completedAmount,
+      startTime: order.executionHistory?.length ? new Date().toISOString() : order.date,
+      endTime: new Date().toISOString()
+    }];
+
+    await dataApi.update('orders', orderId, {
+      ...order,
+      amount: completedAmount, // 订单金额改为实际完成金额
+      status: 'completed',
+      windowResults,
+      totalConsumed,
+      loss: loss > 0 ? loss : 0,
+      executionHistory,
+      bossEndBalance
+    });
+
+    // 更新窗口余额
+    for (const result of windowResults) {
+      const window = cloudWindows.find(w => w.id === result.windowId);
+      if (window) {
+        if (result.endBalance <= 0) {
+          await dataApi.delete('cloudWindows', result.windowId);
+        } else {
+          await dataApi.update('cloudWindows', result.windowId, { ...window, goldBalance: result.endBalance });
+        }
+      }
+    }
+
+    await loadData();
+    return true;
+  };
+
   const pauseOrder = async (orderId: string, completedAmount: number, windowResults: WindowResult[]): Promise<boolean> => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return false;
@@ -649,6 +702,7 @@ export function useFirestore(tenantId: string | null) {
     assignWindow,
     updateWindowGold,
     updateWindowNumber,
+    completePartialOrder,
     pauseOrder,
     resumeOrder,
     createWindowRequest,
