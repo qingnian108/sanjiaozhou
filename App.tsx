@@ -121,6 +121,7 @@ const AdminApp: React.FC<{
     cloudMachines,
     cloudWindows,
     windowRequests,
+    clockRecords,
     loading,
     addPurchase,
     addOrder,
@@ -322,7 +323,7 @@ const AdminApp: React.FC<{
             <Route path="/" element={<Dashboard globalStats={stats.globalStats} dailyStats={stats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={purchases} settings={settings} onDeleteOrder={handleDeleteOrder} onRevertOrder={revertOrder} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onCompletePartialOrder={completePartialOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={handleCreateStaff} onDeleteStaff={handleDeleteStaff} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} />} />
-            <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
+            <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} clockRecords={clockRecords} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={purchases} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={addPurchase} onDeletePurchase={handleDeletePurchase} onUpdatePurchase={updatePurchase} onProcessRequest={processWindowRequest} onRechargeWindow={rechargeWindow} />} />
             <Route path="/friends" element={<Friends tenantId={tenantId} tenantName={tenantName} cloudWindows={cloudWindows} cloudMachines={cloudMachines} purchases={purchases} onRefresh={refreshData} />} />
             <Route path="/billing" element={<Billing tenantId={tenantId} tenantName={tenantName} username={username} />} />
@@ -361,11 +362,14 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
     cloudMachines,
     cloudWindows,
     windowRequests,
+    clockRecords,
     completeOrder,
     completePartialOrder,
     createWindowRequest,
     releaseOrderWindow,
     deleteOrder,
+    clockIn,
+    clockOut,
     loading
   } = useFirestore(tenantId);
 
@@ -386,12 +390,15 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
       cloudMachines={cloudMachines}
       settings={settings}
       windowRequests={windowRequests}
+      clockRecords={clockRecords}
       onLogout={onLogout}
       onCompleteOrder={completeOrder}
       onCompletePartialOrder={completePartialOrder}
       onRequestWindow={createWindowRequest}
       onReleaseOrderWindow={releaseOrderWindow}
       onDeleteOrder={deleteOrder}
+      onClockIn={clockIn}
+      onClockOut={clockOut}
     />
   );
 };
@@ -412,6 +419,7 @@ const DispatcherApp: React.FC<{
     cloudMachines,
     cloudWindows,
     windowRequests,
+    clockRecords,
     loading,
     addOrder,
     deleteOrder,
@@ -597,7 +605,7 @@ const DispatcherApp: React.FC<{
             <Route path="/" element={<Dashboard globalStats={dispatcherStats.globalStats} dailyStats={dispatcherStats.dailyStats} orders={orders} staffList={staffList} cloudWindows={cloudWindows} purchases={[]} settings={settings} onDeleteOrder={handleDeleteOrder} isDispatcher={true} />} />
             <Route path="/dispatch" element={<Dispatch onAddOrder={addOrder} settings={settings} staffList={staffList} cloudWindows={cloudWindows} cloudMachines={cloudMachines} orders={orders} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onResumeOrder={resumeOrder} onCompleteOrder={completeOrder} onCompletePartialOrder={completePartialOrder} onReleaseOrderWindow={releaseOrderWindow} onAddWindowToOrder={addWindowToOrder} onDeleteOrder={handleDeleteOrder} />} />
             <Route path="/staff" element={<StaffManager staffList={staffList} orders={orders} settings={settings} cloudWindows={cloudWindows} cloudMachines={cloudMachines} onAddStaff={async () => {}} onDeleteStaff={() => {}} onDeleteOrder={handleDeleteOrder} onAssignWindow={assignWindow} onCompleteOrder={completeOrder} onAddWindowToOrder={addWindowToOrder} onLoginAsStaff={onLoginAsStaff} isDispatcher={true} />} />
-            <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
+            <Route path="/kook" element={<KookChannels channels={kookChannels} staffList={staffList} clockRecords={clockRecords} onAdd={addKookChannel} onDelete={handleDeleteKookChannel} onUpdate={updateKookChannel} />} />
             <Route path="/cloud" element={<CloudMachines machines={cloudMachines} windows={cloudWindows} staffList={staffList} windowRequests={windowRequests} purchases={[]} adminId={tenantId} onAddMachine={addCloudMachine} onBatchPurchase={batchPurchase} onDeleteMachine={handleDeleteCloudMachine} onUpdateMachine={updateCloudMachine} onAddWindow={addCloudWindow} onDeleteWindow={handleDeleteCloudWindow} onAssignWindow={assignWindow} onUpdateWindowGold={updateWindowGold} onUpdateWindowNumber={updateWindowNumber} onAddPurchase={async () => {}} onDeletePurchase={async () => {}} onUpdatePurchase={async () => {}} onProcessRequest={processWindowRequest} onRechargeWindow={async () => {}} isDispatcher={true} />} />
           </Routes>
         </main>

@@ -125,6 +125,18 @@ export interface KookChannel {
   phone: string;
   userId: string; // 使用人 (staffId)
   nickname: string;
+  kookUserId?: string; // KOOK平台用户ID（机器人自动获取）
+}
+
+// 打卡记录
+export interface ClockRecord {
+  id: string;
+  staffId: string;
+  staffName: string;
+  type: 'in' | 'out'; // 上班 | 下班
+  timestamp: string; // ISO时间戳
+  date: string; // 日期 YYYY-MM-DD
+  tenantId: string;
 }
 
 // 云机

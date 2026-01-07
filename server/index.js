@@ -1922,4 +1922,13 @@ app.delete('/api/contact-request/:id', async (req, res) => {
 const PORT = 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`服务器运行在 http://0.0.0.0:${PORT}`);
+  
+  // 启动 KOOK 机器人
+  try {
+    const kookBot = require('./kook-bot');
+    kookBot.initDB(mongoose, Data);
+    kookBot.startBot();
+  } catch (err) {
+    console.error('KOOK 机器人启动失败:', err.message);
+  }
 });

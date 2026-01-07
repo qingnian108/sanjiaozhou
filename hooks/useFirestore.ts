@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dataApi, staffApi, settingsApi } from '../api';
-import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest, PartialWindowResult } from '../types';
+import { PurchaseRecord, OrderRecord, Staff, Settings, KookChannel, CloudMachine, CloudWindow, WindowSnapshot, WindowResult, WindowRequest, PartialWindowResult, ClockRecord } from '../types';
 
 const DEFAULT_SETTINGS: Settings = {
   employeeCostRate: 12,
@@ -18,6 +18,7 @@ export function useFirestore(tenantId: string | null) {
   const [cloudMachines, setCloudMachines] = useState<CloudMachine[]>([]);
   const [cloudWindows, setCloudWindows] = useState<CloudWindow[]>([]);
   const [windowRequests, setWindowRequests] = useState<WindowRequest[]>([]);
+  const [clockRecords, setClockRecords] = useState<ClockRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -27,7 +28,7 @@ export function useFirestore(tenantId: string | null) {
     }
 
     try {
-      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes, requestsRes] = await Promise.all([
+      const [purchasesRes, ordersRes, staffRes, settingsRes, kookRes, machinesRes, windowsRes, requestsRes, clockRes] = await Promise.all([
         dataApi.list('purchases', tenantId),
         dataApi.list('orders', tenantId),
         staffApi.list(tenantId),
@@ -35,7 +36,8 @@ export function useFirestore(tenantId: string | null) {
         dataApi.list('kookChannels', tenantId),
         dataApi.list('cloudMachines', tenantId),
         dataApi.list('cloudWindows', tenantId),
-        dataApi.list('windowRequests', tenantId)
+        dataApi.list('windowRequests', tenantId),
+        dataApi.list('clockRecords', tenantId)
       ]);
 
       if (purchasesRes.success) setPurchases(purchasesRes.data || []);
@@ -46,6 +48,7 @@ export function useFirestore(tenantId: string | null) {
       if (machinesRes.success) setCloudMachines(machinesRes.data || []);
       if (windowsRes.success) setCloudWindows(windowsRes.data || []);
       if (requestsRes.success) setWindowRequests(requestsRes.data || []);
+      if (clockRes.success) setClockRecords(clockRes.data || []);
     } catch (err) {
       console.error('加载数据失败:', err);
     }
@@ -672,6 +675,35 @@ export function useFirestore(tenantId: string | null) {
     return true;
   };
 
+  // 打卡
+  const clockIn = async (staffId: string, staffName: string) => {
+    if (!tenantId) return;
+    const now = new Date();
+    await dataApi.add('clockRecords', {
+      staffId,
+      staffName,
+      type: 'in',
+      timestamp: now.toISOString(),
+      date: now.toISOString().split('T')[0],
+      tenantId
+    });
+    await loadData();
+  };
+
+  const clockOut = async (staffId: string, staffName: string) => {
+    if (!tenantId) return;
+    const now = new Date();
+    await dataApi.add('clockRecords', {
+      staffId,
+      staffName,
+      type: 'out',
+      timestamp: now.toISOString(),
+      date: now.toISOString().split('T')[0],
+      tenantId
+    });
+    await loadData();
+  };
+
   return {
     purchases,
     orders,
@@ -681,6 +713,7 @@ export function useFirestore(tenantId: string | null) {
     cloudMachines,
     cloudWindows,
     windowRequests,
+    clockRecords,
     loading,
     addPurchase,
     addOrder,
@@ -711,6 +744,8 @@ export function useFirestore(tenantId: string | null) {
     releaseOrderWindow,
     addWindowToOrder,
     revertOrder,
+    clockIn,
+    clockOut,
     refreshData: loadData
   };
 }

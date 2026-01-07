@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Plus, Server, Unlock, Trash2, Calculator, CheckSquare } from 'lucide-react';
-import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult, WindowRequest } from '../types';
+import { User, Monitor, FileText, LogOut, Coins, Clock, CheckCircle, Filter, Plus, Server, Unlock, Trash2, Calculator, CheckSquare, Play, Square } from 'lucide-react';
+import { Staff, OrderRecord, KookChannel, CloudWindow, CloudMachine, Settings, WindowResult, WindowRequest, ClockRecord } from '../types';
 import { GlassCard, StatBox, CyberButton, useCyberModal } from './CyberUI';
 import { formatChineseNumber, formatWan, toWan } from '../utils';
 
@@ -12,12 +12,15 @@ interface Props {
   cloudMachines: CloudMachine[];
   settings: Settings;
   windowRequests: WindowRequest[];
+  clockRecords: ClockRecord[];
   onLogout: () => void;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
   onCompletePartialOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number) => Promise<boolean>;
   onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
   onReleaseOrderWindow?: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onDeleteOrder?: (orderId: string) => void;
+  onClockIn?: (staffId: string, staffName: string) => void;
+  onClockOut?: (staffId: string, staffName: string) => void;
 }
 
 export const StaffPortal: React.FC<Props> = ({
@@ -28,12 +31,15 @@ export const StaffPortal: React.FC<Props> = ({
   cloudMachines,
   settings,
   windowRequests,
+  clockRecords,
   onLogout,
   onCompleteOrder,
   onCompletePartialOrder,
   onRequestWindow,
   onReleaseOrderWindow,
-  onDeleteOrder
+  onDeleteOrder,
+  onClockIn,
+  onClockOut
 }) => {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   // 按订单ID存储窗口余额和保存状态，关闭弹窗后保留数据
@@ -151,6 +157,25 @@ export const StaffPortal: React.FC<Props> = ({
     
     return { orderCount, totalAmount, totalLoss, todayIncome };
   }, [myOrders, settings.employeeCostRate]);
+
+  // 打卡状态
+  const clockStatus = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecords = clockRecords
+      .filter(r => r.staffId === staff.id && r.date === today)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    if (todayRecords.length === 0) {
+      return { isWorking: false, lastRecord: null, todayRecords: [] };
+    }
+    
+    const lastRecord = todayRecords[0];
+    return {
+      isWorking: lastRecord.type === 'in',
+      lastRecord,
+      todayRecords
+    };
+  }, [clockRecords, staff.id]);
 
   // 我的云机窗口（按余额从低到高排序）
   const myWindows = useMemo(() => 
@@ -380,10 +405,41 @@ export const StaffPortal: React.FC<Props> = ({
               <p className="text-cyber-primary/60 text-sm font-mono">员工端</p>
             </div>
           </div>
-          <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 border border-red-500/50 text-red-400 hover:bg-red-500/20 transition-colors">
-            <LogOut size={16} /> 退出
-          </button>
+          <div className="flex items-center gap-3">
+            {/* 打卡按钮 */}
+            {clockStatus.isWorking ? (
+              <button 
+                onClick={() => onClockOut?.(staff.id, staff.name)}
+                className="flex items-center gap-2 px-4 py-2 border border-orange-500 text-orange-400 hover:bg-orange-500/20 transition-colors"
+              >
+                <Square size={16} /> 下班打卡
+              </button>
+            ) : (
+              <button 
+                onClick={() => onClockIn?.(staff.id, staff.name)}
+                className="flex items-center gap-2 px-4 py-2 border border-green-500 text-green-400 hover:bg-green-500/20 transition-colors"
+              >
+                <Play size={16} /> 上班打卡
+              </button>
+            )}
+            <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 border border-red-500/50 text-red-400 hover:bg-red-500/20 transition-colors">
+              <LogOut size={16} /> 退出
+            </button>
+          </div>
         </header>
+
+        {/* 打卡状态提示 */}
+        {clockStatus.isWorking && clockStatus.lastRecord && (
+          <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded flex items-center justify-between">
+            <div className="flex items-center gap-2 text-green-400">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="font-mono">工作中</span>
+              <span className="text-xs text-gray-400">
+                上班时间: {new Date(clockStatus.lastRecord.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 进行中的订单 */}
         {pendingOrders.length > 0 && (
