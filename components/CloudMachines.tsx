@@ -386,7 +386,7 @@ export const CloudMachines: React.FC<Props> = ({
     return staffBorderColors[index % staffBorderColors.length];
   };
 
-  const getMachineWindows = (machineId: string) => windows.filter(w => w.machineId === machineId);
+  const getMachineWindows = (machineId: string) => windows.filter(w => w.machineId === machineId).sort((a, b) => a.goldBalance - b.goldBalance);
   const getMachineTotalGold = (machineId: string) => getMachineWindows(machineId).reduce((sum, w) => sum + w.goldBalance, 0);
   const getStaffWindowCount = (staffId: string) => windows.filter(w => w.userId === staffId).length;
 

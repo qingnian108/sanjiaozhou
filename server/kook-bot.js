@@ -67,10 +67,13 @@ async function getGateway() {
   throw new Error('获取 Gateway 失败: ' + JSON.stringify(result));
 }
 
-// 踢出用户
-async function kickUser(guildId, userId, reason = '未打卡上班') {
-  console.log(`[KOOK Bot] 踢出用户 ${userId} 从服务器 ${guildId}`);
+// 将用户移出语音频道（通过移动到空频道实现，或直接踢出服务器再邀请回来）
+// KOOK 没有直接的"踢出语音频道"接口，改回踢出服务器
+async function kickFromVoiceChannel(guildId, channelId, userId) {
+  console.log(`[KOOK Bot] 将用户 ${userId} 移出语音频道 ${channelId}`);
   try {
+    // KOOK 没有单独踢出语音频道的接口，只能踢出服务器
+    // 使用 /guild/kickout 踢出服务器
     const result = await kookRequest('POST', '/guild/kickout', {
       guild_id: guildId,
       target_id: userId
@@ -171,18 +174,18 @@ async function handleVoiceJoin(event) {
   console.log(`[KOOK Bot] 用户 ${userId} 加入语音频道 ${channelId}`);
   
   // 检查打卡状态
-  const { clocked, staffInfo, reason } = await checkUserClocked(userId);
+  const { clocked, reason } = await checkUserClocked(userId);
   
   if (!clocked) {
-    console.log(`[KOOK Bot] 用户 ${userId} 未打卡，准备踢出`);
+    console.log(`[KOOK Bot] 用户 ${userId} 未打卡，准备移出语音频道`);
     
-    // 踢出用户
-    await kickUser(guildId, userId);
+    // 踢出服务器（KOOK 没有单独踢出语音频道的接口）
+    await kickFromVoiceChannel(guildId, channelId, userId);
     
     // 发送私信提醒
     let message = '⚠️ 您已被移出语音频道\n\n';
     if (reason === 'not_bindded') {
-      message += '原因：您的 KOOK 账号未绑定系统账号\n请联系管理员绑定账号后再进入频道';
+      message += '原因：您的 KOOK 账号未绑定系统账号\n请向管理员获取绑定码，在频道发送「绑定 绑定码」完成绑定';
     } else if (reason === 'no_clock') {
       message += '原因：您今天还未打卡上班\n请先在系统中打卡上班后再进入频道';
     } else if (reason === 'clocked_out') {
@@ -276,7 +279,8 @@ function startBot() {
 }
 
 function handleEvent(event) {
-  // console.log('[KOOK Bot] 收到事件:', JSON.stringify(event, null, 2));
+  // 打印所有收到的事件（调试用）
+  console.log('[KOOK Bot] 收到事件 type:', event.type, 'channel_type:', event.channel_type);
   
   // 语音频道相关事件
   // type: 255 是系统消息
@@ -284,15 +288,139 @@ function handleEvent(event) {
   
   if (event.type === 255 && event.extra) {
     const eventType = event.extra.type;
+    console.log('[KOOK Bot] 系统事件类型:', eventType);
+    console.log('[KOOK Bot] extra 数据:', JSON.stringify(event.extra));
     
     // joined_channel: 用户加入语音频道
     if (eventType === 'joined_channel') {
-      handleVoiceJoin({
-        user_id: event.extra.user_id,
-        guild_id: event.extra.guild_id,
-        channel_id: event.extra.channel_id
-      });
+      // KOOK 的 joined_channel 事件，用户ID在 extra.body.user_id
+      const userId = event.extra.body?.user_id || event.extra.user_id;
+      const guildId = event.extra.body?.guild_id || event.extra.guild_id || event.target_id;
+      const channelId = event.extra.body?.channel_id || event.extra.channel_id;
+      
+      console.log('[KOOK Bot] 解析到用户ID:', userId, '服务器ID:', guildId, '频道ID:', channelId);
+      
+      if (userId) {
+        handleVoiceJoin({
+          user_id: userId,
+          guild_id: guildId,
+          channel_id: channelId
+        });
+      }
     }
+  }
+  
+  // 文字消息处理（type: 1 是文字消息, type: 9 是 KMarkdown）
+  if ((event.type === 1 || event.type === 9) && event.content) {
+    console.log('[KOOK Bot] 收到文字消息:', event.content, '来自用户:', event.author_id);
+    handleTextMessage(event);
+  }
+}
+
+// 处理文字消息（绑定指令）
+async function handleTextMessage(event) {
+  const content = event.content.trim().toUpperCase(); // 转大写方便匹配绑定码
+  const userId = event.author_id;
+  const username = event.extra?.author?.username || '未知用户';
+  
+  // 提取绑定码（6位字母数字）
+  let bindCode = null;
+  
+  // 格式1: 绑定 XXXXXX 或 绑定XXXXXX
+  if (content.startsWith('绑定')) {
+    bindCode = content.replace(/^绑定\s*/, '').trim();
+  }
+  // 格式2: 直接发送6位绑定码
+  else if (/^[A-Z0-9]{6}$/.test(content)) {
+    bindCode = content;
+  }
+  
+  // 如果识别到绑定码，进行绑定
+  if (bindCode) {
+    // 验证绑定码格式
+    if (!/^[A-Z0-9]{6}$/.test(bindCode)) {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) 绑定码格式不正确，请输入6位绑定码\n例如：\`绑定 ABC123\``);
+      return;
+    }
+    
+    console.log(`[KOOK Bot] 用户 ${username}(${userId}) 请求绑定，绑定码: ${bindCode}`);
+    
+    // 调用绑定函数
+    const result = await bindByCode(bindCode, userId, username);
+    
+    if (result.success) {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) ✅ 绑定成功！\n您的 KOOK 账号已绑定\n现在打卡上班后即可进入语音频道`);
+    } else {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) ❌ 绑定失败\n${result.message}`);
+    }
+    return;
+  }
+  
+  // 查询绑定状态
+  if (content === '查询' || content === '状态') {
+    const status = await checkUserClocked(userId);
+    
+    if (status.reason === 'not_bindded') {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) 您的 KOOK 账号尚未绑定\n请向管理员获取绑定码，然后发送 \`绑定 绑定码\``);
+    } else if (status.clocked) {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) ✅ 您已打卡上班，可以进入语音频道`);
+    } else {
+      await sendChannelMessage(event.target_id, `(met)${userId}(met) ⚠️ 您尚未打卡上班\n请先在员工系统中打卡后再进入语音频道`);
+    }
+  }
+}
+
+// 通过绑定码绑定 KOOK 用户
+async function bindByCode(bindCode, kookUserId, kookUsername) {
+  if (!Data) return { success: false, message: '系统错误' };
+  
+  try {
+    // 通过绑定码查找 kookChannel
+    const channel = await Data.findOne({
+      collection: 'kookChannels',
+      'data.bindCode': bindCode
+    });
+    
+    if (!channel) {
+      return { success: false, message: '绑定码无效或已过期\n请联系管理员获取新的绑定码' };
+    }
+    
+    // 检查是否已被其他用户绑定
+    if (channel.data.kookUserId && channel.data.kookUserId !== kookUserId) {
+      return { success: false, message: '该绑定码已被其他用户使用' };
+    }
+    
+    // 使用 updateOne 更新绑定信息（确保数据被保存）
+    const result = await Data.updateOne(
+      { _id: channel._id },
+      { 
+        $set: { 
+          'data.kookUserId': kookUserId,
+          'data.kookUsername': kookUsername
+        }
+      }
+    );
+    
+    console.log(`[KOOK Bot] 更新结果:`, result);
+    console.log(`[KOOK Bot] 已绑定 KOOK 用户 ${kookUsername} (${kookUserId})，绑定码: ${bindCode}`);
+    return { success: true };
+  } catch (err) {
+    console.error('[KOOK Bot] 绑定失败:', err);
+    return { success: false, message: '系统错误，请稍后重试' };
+  }
+}
+
+// 发送频道消息
+async function sendChannelMessage(channelId, content) {
+  try {
+    const result = await kookRequest('POST', '/message/create', {
+      target_id: channelId,
+      content: content
+    });
+    return result.code === 0;
+  } catch (err) {
+    console.error('[KOOK Bot] 发送频道消息失败:', err);
+    return false;
   }
 }
 

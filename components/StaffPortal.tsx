@@ -14,8 +14,8 @@ interface Props {
   windowRequests: WindowRequest[];
   clockRecords: ClockRecord[];
   onLogout: () => void;
-  onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => void;
-  onCompletePartialOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number) => Promise<boolean>;
+  onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number) => void;
+  onCompletePartialOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number) => Promise<boolean>;
   onRequestWindow: (staffId: string, staffName: string, type: 'apply' | 'release', windowId?: string) => void;
   onReleaseOrderWindow?: (orderId: string, windowId: string, endBalance: number, staffId: string, staffName: string) => void;
   onDeleteOrder?: (orderId: string) => void;
@@ -83,6 +83,9 @@ export const StaffPortal: React.FC<Props> = ({
   
   // 老板账号结束余额
   const [bossEndBalances, setBossEndBalances] = useState<Record<string, string>>({});
+  
+  // 死亡次数
+  const [deathCounts, setDeathCounts] = useState<Record<string, string>>({});
   
   // 删除订单确认状态
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
@@ -225,6 +228,18 @@ export const StaffPortal: React.FC<Props> = ({
       return;
     }
 
+    // 验证死亡次数
+    const deathCountStr = deathCounts[partialOrderId] || '';
+    if (!deathCountStr) {
+      showAlert('输入错误', '请填写死亡次数');
+      return;
+    }
+    const deathCount = parseInt(deathCountStr);
+    if (isNaN(deathCount) || deathCount < 0) {
+      showAlert('输入错误', '死亡次数必须是非负整数');
+      return;
+    }
+
     setIsCompletingPartial(true); // 开始处理，禁用按钮
     
     try {
@@ -243,7 +258,7 @@ export const StaffPortal: React.FC<Props> = ({
       // 获取老板账号结束余额
       const bossEndBalance = bossEndBalances[partialOrderId] ? parseFloat(bossEndBalances[partialOrderId]) * 10000 : undefined;
 
-      const success = await onCompletePartialOrder(partialOrderId, amount, results, bossEndBalance);
+      const success = await onCompletePartialOrder(partialOrderId, amount, results, bossEndBalance, deathCount);
       if (success) {
         showSuccess('操作成功', `已完成 ${amount} 万订单`);
       } else {
@@ -253,6 +268,7 @@ export const StaffPortal: React.FC<Props> = ({
       setPartialAmount('');
       setPartialWindowBalances({});
       setBossEndBalances(prev => { const n = {...prev}; delete n[partialOrderId]; return n; });
+      setDeathCounts(prev => { const n = {...prev}; delete n[partialOrderId]; return n; });
     } finally {
       setIsCompletingPartial(false); // 处理完成，恢复按钮
     }
@@ -299,6 +315,18 @@ export const StaffPortal: React.FC<Props> = ({
       showAlert('请填写完整', `请填写所有窗口的剩余余额（还有 ${missingBalances.length} 个窗口未填写）`);
       return;
     }
+
+    // 验证死亡次数
+    const deathCountStr = deathCounts[order.id] || '';
+    if (!deathCountStr) {
+      showAlert('请填写完整', '请填写死亡次数');
+      return;
+    }
+    const deathCount = parseInt(deathCountStr);
+    if (isNaN(deathCount) || deathCount < 0) {
+      showAlert('输入错误', '死亡次数必须是非负整数');
+      return;
+    }
     
     const results: WindowResult[] = staffWindows.map(window => {
       const endBalance = parseFloat(windowBalances[window.id]) * 10000;
@@ -319,11 +347,12 @@ export const StaffPortal: React.FC<Props> = ({
 
     // 获取老板账号结束余额
     const bossEndBalance = bossEndBalances[order.id] ? parseFloat(bossEndBalances[order.id]) * 10000 : undefined;
-    onCompleteOrder(order.id, results, bossEndBalance);
+    onCompleteOrder(order.id, results, bossEndBalance, deathCount);
     // 完成后清空该订单的临时数据
     setOrderWindowBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setOrderSavedWindows(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setBossEndBalances(prev => { const n = {...prev}; delete n[order.id]; return n; });
+    setDeathCounts(prev => { const n = {...prev}; delete n[order.id]; return n; });
     setActiveOrderId(null);
   };
 
@@ -331,11 +360,13 @@ export const StaffPortal: React.FC<Props> = ({
   const confirmCompleteOrder = () => {
     if (pendingCompleteOrder) {
       const bossEndBalance = bossEndBalances[pendingCompleteOrder.order.id] ? parseFloat(bossEndBalances[pendingCompleteOrder.order.id]) * 10000 : undefined;
-      onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results, bossEndBalance);
+      const deathCount = deathCounts[pendingCompleteOrder.order.id] ? parseInt(deathCounts[pendingCompleteOrder.order.id]) : undefined;
+      onCompleteOrder(pendingCompleteOrder.order.id, pendingCompleteOrder.results, bossEndBalance, deathCount);
       // 完成后清空该订单的临时数据
       setOrderWindowBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setOrderSavedWindows(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setBossEndBalances(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
+      setDeathCounts(prev => { const n = {...prev}; delete n[pendingCompleteOrder.order.id]; return n; });
       setActiveOrderId(null);
       setPendingCompleteOrder(null);
     }
@@ -649,6 +680,19 @@ export const StaffPortal: React.FC<Props> = ({
                 )}
               </div>
 
+              {/* 死亡次数 */}
+              <div className="mb-4">
+                <label className="block text-orange-400 text-sm font-mono mb-2">死亡次数 <span className="text-red-400">*</span></label>
+                <input
+                  type="number"
+                  placeholder="输入死亡次数"
+                  min="0"
+                  value={deathCounts[partialOrder.id] || ''}
+                  onChange={e => setDeathCounts({...deathCounts, [partialOrder.id]: e.target.value})}
+                  className="w-full bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
+                />
+              </div>
+
               <div className="text-sm text-orange-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）:</div>
               <div className="space-y-3 mb-6">
                 {myWindows.map(window => {
@@ -784,6 +828,19 @@ export const StaffPortal: React.FC<Props> = ({
                   )}
                 </div>
               )}
+
+              {/* 死亡次数 */}
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded">
+                <label className="block text-red-400 text-sm font-mono mb-2">死亡次数 <span className="text-red-400">*</span></label>
+                <input
+                  type="number"
+                  placeholder="输入死亡次数"
+                  min="0"
+                  value={deathCounts[activeOrder.id] || ''}
+                  onChange={e => setDeathCounts({...deathCounts, [activeOrder.id]: e.target.value})}
+                  className="w-full bg-black/40 border border-red-500/30 text-cyber-text font-mono px-3 py-2"
+                />
+              </div>
 
               {/* 已释放的窗口 */}
               {activeOrder.partialResults && activeOrder.partialResults.length > 0 && (
@@ -1147,6 +1204,7 @@ export const StaffPortal: React.FC<Props> = ({
                     <th className="py-2 px-2 text-cyber-primary font-mono">消耗(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">损耗(万)</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">损耗比</th>
+                    <th className="py-2 px-2 text-cyber-primary font-mono">死亡</th>
                     <th className="py-2 px-2 text-cyber-primary font-mono">收入(¥)</th>
                   </tr>
                 </thead>
@@ -1163,6 +1221,7 @@ export const StaffPortal: React.FC<Props> = ({
                       <td className="py-2 px-2">{toWan(consumed)}</td>
                       <td className="py-2 px-2 text-red-400">{order.loss > 0 ? toWan(order.loss) : '-'}</td>
                       <td className="py-2 px-2">{order.loss > 0 ? `${lossRatio}%` : '-'}</td>
+                      <td className="py-2 px-2 text-orange-400">{order.deathCount !== undefined ? order.deathCount : '-'}</td>
                       <td className="py-2 px-2 text-green-400">{income.toFixed(2)}</td>
                     </tr>
                     );

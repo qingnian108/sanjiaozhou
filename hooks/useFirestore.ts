@@ -86,7 +86,7 @@ export function useFirestore(tenantId: string | null) {
     await loadData();
   };
 
-  const completeOrder = async (orderId: string, windowResults: WindowResult[], bossEndBalance?: number) => {
+  const completeOrder = async (orderId: string, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) {
       console.error('completeOrder: 订单不存在', orderId);
@@ -125,7 +125,8 @@ export function useFirestore(tenantId: string | null) {
       totalConsumed,
       loss: loss > 0 ? loss : 0,
       executionHistory,
-      bossEndBalance: bossEndBalance !== undefined ? bossEndBalance : order.bossEndBalance
+      bossEndBalance: bossEndBalance !== undefined ? bossEndBalance : order.bossEndBalance,
+      deathCount
     });
     
     if (!updateResult.success) {
@@ -153,7 +154,7 @@ export function useFirestore(tenantId: string | null) {
   };
 
   // 完成部分订单（不创建新订单）
-  const completePartialOrder = async (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number): Promise<boolean> => {
+  const completePartialOrder = async (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number): Promise<boolean> => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return false;
 
@@ -186,7 +187,8 @@ export function useFirestore(tenantId: string | null) {
       totalConsumed,
       loss: loss > 0 ? loss : 0,
       executionHistory,
-      bossEndBalance
+      bossEndBalance,
+      deathCount
     });
 
     // 更新窗口余额

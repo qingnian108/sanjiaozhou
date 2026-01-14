@@ -620,6 +620,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                         <th className="p-3">订单金额 (万)</th>
                         <th className="p-3 text-red-500">损耗 (万)</th>
                         <th className="p-3 text-yellow-500">损耗比 (%)</th>
+                        <th className="p-3 text-orange-500">死亡</th>
                         <th className="p-3 text-right">操作</th>
                       </tr>
                     </thead>
@@ -634,6 +635,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                             <td className="p-3 text-cyber-primary font-bold">{formatNumber(r.amount)}</td>
                             <td className="p-3 text-red-500">{r.loss > 0 ? toWan(r.loss) : '-'}</td>
                             <td className="p-3 text-yellow-500">{r.loss > 0 ? `${lossRatio}%` : '-'}</td>
+                            <td className="p-3 text-orange-500">{r.deathCount !== undefined ? r.deathCount : '-'}</td>
                             <td className="p-3 text-right">
                               <button 
                                 onClick={() => setDeleteOrderId(r.id)}
@@ -646,7 +648,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                         );
                       }) : (
                         <tr>
-                          <td colSpan={6} className="p-6 text-center text-gray-500">该周期暂无订单记录</td>
+                          <td colSpan={7} className="p-6 text-center text-gray-500">该周期暂无订单记录</td>
                         </tr>
                       )}
                     </tbody>
@@ -662,6 +664,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ staffList, orders, s
                               ? ((filteredRecordStats.totalLoss / 10000 / filteredRecordStats.totalAmount) * 100).toFixed(2)
                               : '0'}%
                           </td>
+                          <td className="p-3">-</td>
                           <td className="p-3"></td>
                         </tr>
                       </tfoot>

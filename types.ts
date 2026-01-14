@@ -38,6 +38,7 @@ export interface OrderRecord {
   bossEndBalance?: number; // 老板账号结束余额（完成时记录）
   orderNumber?: string; // 订单号（选填）
   bossNickname?: string; // 老板昵称（选填）
+  deathCount?: number; // 死亡次数
 }
 
 // 中途释放的窗口结果
@@ -126,6 +127,7 @@ export interface KookChannel {
   userId: string; // 使用人 (staffId)
   nickname: string;
   kookUserId?: string; // KOOK平台用户ID（机器人自动获取）
+  bindCode?: string; // 6位绑定码（用于员工在KOOK绑定账号）
 }
 
 // 打卡记录

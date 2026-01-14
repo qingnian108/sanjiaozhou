@@ -496,6 +496,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ globalStats, dailyStats, o
                     {order.loss > 0 && (
                       <span className="text-red-400 text-xs">(损耗 {(order.loss / 10000).toFixed(0)} 万)</span>
                     )}
+                    <span className="text-orange-400 text-xs">死亡: {order.deathCount !== undefined ? order.deathCount : '-'}</span>
                   </div>
                 </div>
               ))}
