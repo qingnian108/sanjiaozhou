@@ -997,62 +997,69 @@ export const StaffPortal: React.FC<Props> = ({
         </div>
 
         {/* 今日业绩排行榜 */}
-        {todayRanking.rankings.length > 0 && (
-          <GlassCard className="mb-8">
-            <div className="flex items-center gap-2 mb-4 text-cyber-accent">
-              <CheckCircle size={20} />
-              <h2 className="font-mono text-lg">今日业绩排行榜</h2>
-            </div>
-            <div className="space-y-2">
-              {todayRanking.rankings.slice(0, 10).map((rank, index) => {
-                const isMe = rank.staff.id === staff.id;
-                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
-                return (
-                  <div 
-                    key={rank.staff.id}
-                    className={`flex items-center justify-between p-3 rounded border transition-all ${
-                      isMe 
-                        ? 'bg-cyber-primary/20 border-cyber-primary shadow-[0_0_10px_rgba(0,243,255,0.3)]' 
-                        : 'bg-black/30 border-gray-700/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 flex items-center justify-center font-mono font-bold ${
-                        index < 3 ? 'text-xl' : 'text-gray-400'
-                      }`}>
-                        {medal || `#${index + 1}`}
+        <GlassCard className="mb-8">
+          <div className="flex items-center gap-2 mb-4 text-cyber-accent">
+            <CheckCircle size={20} />
+            <h2 className="font-mono text-lg">今日业绩排行榜</h2>
+          </div>
+          {todayRanking.rankings.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                {todayRanking.rankings.slice(0, 10).map((rank, index) => {
+                  const isMe = rank.staff.id === staff.id;
+                  const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                  return (
+                    <div 
+                      key={rank.staff.id}
+                      className={`flex items-center justify-between p-3 rounded border transition-all ${
+                        isMe 
+                          ? 'bg-cyber-primary/20 border-cyber-primary shadow-[0_0_10px_rgba(0,243,255,0.3)]' 
+                          : 'bg-black/30 border-gray-700/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 flex items-center justify-center font-mono font-bold ${
+                          index < 3 ? 'text-xl' : 'text-gray-400'
+                        }`}>
+                          {medal || `#${index + 1}`}
+                        </div>
+                        <div>
+                          <div className={`font-mono ${isMe ? 'text-cyber-primary font-bold' : 'text-white'}`}>
+                            {rank.staff.name}
+                            {isMe && <span className="ml-2 text-xs text-cyber-primary">(我)</span>}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className={`font-mono ${isMe ? 'text-cyber-primary font-bold' : 'text-white'}`}>
-                          {rank.staff.name}
-                          {isMe && <span className="ml-2 text-xs text-cyber-primary">(我)</span>}
+                      <div className="text-right">
+                        <div className={`font-mono text-lg ${
+                          index === 0 ? 'text-yellow-400' : 
+                          index === 1 ? 'text-gray-300' : 
+                          index === 2 ? 'text-orange-400' : 
+                          'text-cyber-accent'
+                        }`}>
+                          {formatChineseNumber(rank.totalAmount)} 万
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          ¥{(rank.totalAmount * settings.employeeCostRate / 1000).toFixed(2)}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className={`font-mono text-lg ${
-                        index === 0 ? 'text-yellow-400' : 
-                        index === 1 ? 'text-gray-300' : 
-                        index === 2 ? 'text-orange-400' : 
-                        'text-cyber-accent'
-                      }`}>
-                        {formatChineseNumber(rank.totalAmount)} 万
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        ¥{(rank.totalAmount * settings.employeeCostRate / 1000).toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {todayRanking.rankings.length > 10 && (
-              <div className="mt-3 text-center text-xs text-gray-500">
-                还有 {todayRanking.rankings.length - 10} 人未显示
+                  );
+                })}
               </div>
-            )}
-          </GlassCard>
-        )}
+              {todayRanking.rankings.length > 10 && (
+                <div className="mt-3 text-center text-xs text-gray-500">
+                  还有 {todayRanking.rankings.length - 10} 人未显示
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p className="font-mono">今日暂无业绩数据</p>
+              <p className="text-xs mt-2">完成订单后将显示排名</p>
+            </div>
+          )}
+        </GlassCard>
 
         {/* 我的云机窗口 */}
         <GlassCard className="mb-8">
