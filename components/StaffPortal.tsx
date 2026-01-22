@@ -166,6 +166,11 @@ export const StaffPortal: React.FC<Props> = ({
   // 今日业绩排名
   const todayRanking = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
+    console.log('=== 排行榜调试信息 ===');
+    console.log('今天日期:', today);
+    console.log('员工列表数量:', staffList.length);
+    console.log('订单总数:', orders.length);
+    
     const rankings = staffList
       .filter(s => s.role !== 'admin') // 只统计员工
       .map(s => {
@@ -175,12 +180,16 @@ export const StaffPortal: React.FC<Props> = ({
           o.date === today
         );
         const totalAmount = todayOrders.reduce((sum, o) => sum + o.amount, 0);
+        console.log(`员工 ${s.name}: 今日完成订单 ${todayOrders.length} 个, 总金额 ${totalAmount} 万`);
         return { staff: s, totalAmount };
       })
       .filter(r => r.totalAmount > 0) // 只显示有业绩的
       .sort((a, b) => b.totalAmount - a.totalAmount); // 按业绩降序
     
+    console.log('有业绩的员工数:', rankings.length);
     const myRank = rankings.findIndex(r => r.staff.id === staff.id) + 1;
+    console.log('我的排名:', myRank);
+    console.log('===================');
     return { rankings, myRank };
   }, [staffList, orders, staff.id]);
 
