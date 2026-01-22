@@ -363,6 +363,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
     cloudWindows,
     windowRequests,
     clockRecords,
+    staffList,
     completeOrder,
     completePartialOrder,
     createWindowRequest,
@@ -391,6 +392,7 @@ const StaffApp: React.FC<{ staffInfo: any; tenantId: string; onLogout: () => voi
       settings={settings}
       windowRequests={windowRequests}
       clockRecords={clockRecords}
+      staffList={staffList}
       onLogout={onLogout}
       onCompleteOrder={completeOrder}
       onCompletePartialOrder={completePartialOrder}

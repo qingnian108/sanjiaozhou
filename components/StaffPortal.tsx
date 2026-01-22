@@ -13,6 +13,7 @@ interface Props {
   settings: Settings;
   windowRequests: WindowRequest[];
   clockRecords: ClockRecord[];
+  staffList: Staff[]; // 添加员工列表用于排名
   onLogout: () => void;
   onCompleteOrder: (orderId: string, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number) => void;
   onCompletePartialOrder: (orderId: string, completedAmount: number, windowResults: WindowResult[], bossEndBalance?: number, deathCount?: number) => Promise<boolean>;
@@ -32,6 +33,7 @@ export const StaffPortal: React.FC<Props> = ({
   settings,
   windowRequests,
   clockRecords,
+  staffList,
   onLogout,
   onCompleteOrder,
   onCompletePartialOrder,
@@ -160,6 +162,27 @@ export const StaffPortal: React.FC<Props> = ({
     
     return { orderCount, totalAmount, totalLoss, todayIncome };
   }, [myOrders, settings.employeeCostRate]);
+
+  // 今日业绩排名
+  const todayRanking = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const rankings = staffList
+      .filter(s => s.role !== 'admin') // 只统计员工
+      .map(s => {
+        const todayOrders = orders.filter(o => 
+          o.staffId === s.id && 
+          o.status === 'completed' && 
+          o.date === today
+        );
+        const totalAmount = todayOrders.reduce((sum, o) => sum + o.amount, 0);
+        return { staff: s, totalAmount };
+      })
+      .filter(r => r.totalAmount > 0) // 只显示有业绩的
+      .sort((a, b) => b.totalAmount - a.totalAmount); // 按业绩降序
+    
+    const myRank = rankings.findIndex(r => r.staff.id === staff.id) + 1;
+    return { rankings, myRank };
+  }, [staffList, orders, staff.id]);
 
   // 打卡状态
   const clockStatus = useMemo(() => {
@@ -641,28 +664,28 @@ export const StaffPortal: React.FC<Props> = ({
                 <div className="text-sm text-gray-400">订单金额: <span className="text-cyber-accent text-lg">{partialOrder.amount}</span> 万</div>
               </div>
 
-              {/* 老板账号余额 */}
-              {partialOrder.bossStartBalance !== undefined && (
-                <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded">
-                  <div className="text-sm text-purple-400 font-mono mb-2">老板账号余额</div>
-                  <div className="grid grid-cols-2 gap-4">
+              {/* 死亡次数 */}
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded">
+                <div className="grid grid-cols-2 gap-4">
+                  {partialOrder.bossStartBalance !== undefined && (
                     <div>
-                      <div className="text-xs text-gray-400">打之前</div>
+                      <div className="text-xs text-gray-400">老板初始余额</div>
                       <div className="text-lg font-mono text-purple-400">{formatWan(partialOrder.bossStartBalance)}</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-gray-400">打之后（请填写）</div>
-                      <input
-                        type="number"
-                        placeholder="输入结束余额（万）"
-                        value={bossEndBalances[partialOrder.id] || ''}
-                        onChange={e => setBossEndBalances({...bossEndBalances, [partialOrder.id]: e.target.value})}
-                        className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
-                      />
-                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs text-gray-400">死亡次数（必填）</div>
+                    <input
+                      type="number"
+                      placeholder="输入死亡次数"
+                      min="0"
+                      value={deathCounts[partialOrder.id] || ''}
+                      onChange={e => setDeathCounts({...deathCounts, [partialOrder.id]: e.target.value})}
+                      className="w-full bg-black/40 border border-red-500/30 text-cyber-text font-mono px-3 py-2"
+                    />
                   </div>
                 </div>
-              )}
+              </div>
 
               <div className="mb-4">
                 <label className="block text-orange-400 text-sm font-mono mb-2">实际完成金额（万）</label>
@@ -678,19 +701,6 @@ export const StaffPortal: React.FC<Props> = ({
                     将完成 <span className="text-green-400">{partialAmount}</span> 万（原订单 {partialOrder.amount} 万）
                   </div>
                 )}
-              </div>
-
-              {/* 死亡次数 */}
-              <div className="mb-4">
-                <label className="block text-orange-400 text-sm font-mono mb-2">死亡次数 <span className="text-red-400">*</span></label>
-                <input
-                  type="number"
-                  placeholder="输入死亡次数"
-                  min="0"
-                  value={deathCounts[partialOrder.id] || ''}
-                  onChange={e => setDeathCounts({...deathCounts, [partialOrder.id]: e.target.value})}
-                  className="w-full bg-black/40 border border-orange-500/30 text-cyber-text font-mono px-3 py-2"
-                />
               </div>
 
               <div className="text-sm text-orange-400 font-mono mb-2">请填写每个窗口的剩余哈夫币（万）:</div>
@@ -732,6 +742,17 @@ export const StaffPortal: React.FC<Props> = ({
                         >
                           消耗完
                         </button>
+                        {onReleaseOrderWindow && partialOrderId && (
+                          <button
+                            onClick={() => {
+                              setActiveOrderId(partialOrderId);
+                              handleReleaseOrderWindow(window.id);
+                            }}
+                            className="px-2 py-2 text-xs font-mono border border-yellow-500 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-1"
+                          >
+                            <Unlock size={12} /> 释放
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -801,45 +822,27 @@ export const StaffPortal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* 老板账号余额 */}
-              {activeOrder.bossStartBalance !== undefined && (
-                <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded">
-                  <div className="text-sm text-purple-400 font-mono mb-2">老板账号余额</div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs text-gray-400">打之前</div>
-                      <div className="text-lg font-mono text-purple-400">{formatWan(activeOrder.bossStartBalance)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">打之后（请填写）</div>
-                      <input
-                        type="number"
-                        placeholder="输入结束余额（万）"
-                        value={bossEndBalances[activeOrder.id] || ''}
-                        onChange={e => setBossEndBalances({...bossEndBalances, [activeOrder.id]: e.target.value})}
-                        className="w-full bg-black/40 border border-purple-500/30 text-cyber-text font-mono px-3 py-2"
-                      />
-                    </div>
-                  </div>
-                  {bossEndBalances[activeOrder.id] && (
-                    <div className="mt-2 text-xs text-gray-400">
-                      消耗: <span className="text-red-400">{formatWan(activeOrder.bossStartBalance - parseFloat(bossEndBalances[activeOrder.id]) * 10000)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* 死亡次数 */}
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded">
-                <label className="block text-red-400 text-sm font-mono mb-2">死亡次数 <span className="text-red-400">*</span></label>
-                <input
-                  type="number"
-                  placeholder="输入死亡次数"
-                  min="0"
-                  value={deathCounts[activeOrder.id] || ''}
-                  onChange={e => setDeathCounts({...deathCounts, [activeOrder.id]: e.target.value})}
-                  className="w-full bg-black/40 border border-red-500/30 text-cyber-text font-mono px-3 py-2"
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  {activeOrder.bossStartBalance !== undefined && (
+                    <div>
+                      <div className="text-xs text-gray-400">老板初始余额</div>
+                      <div className="text-lg font-mono text-purple-400">{formatWan(activeOrder.bossStartBalance)}</div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs text-gray-400">死亡次数（必填）</div>
+                    <input
+                      type="number"
+                      placeholder="输入死亡次数"
+                      min="0"
+                      value={deathCounts[activeOrder.id] || ''}
+                      onChange={e => setDeathCounts({...deathCounts, [activeOrder.id]: e.target.value})}
+                      className="w-full bg-black/40 border border-red-500/30 text-cyber-text font-mono px-3 py-2"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* 已释放的窗口 */}
@@ -981,12 +984,75 @@ export const StaffPortal: React.FC<Props> = ({
 
 
         {/* 今日统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <StatBox label="今日订单" value={myStats.orderCount.toString()} />
           <StatBox label="今日金额(万)" value={myStats.totalAmount.toString()} />
           <StatBox label="今日损耗(万)" value={toWan(myStats.totalLoss)} trend="down" />
           <StatBox label="今日收入(¥)" value={myStats.todayIncome.toFixed(2)} trend="up" />
+          <StatBox 
+            label="今日排名" 
+            value={todayRanking.myRank > 0 ? `#${todayRanking.myRank}` : '-'} 
+            subValue={todayRanking.rankings.length > 0 ? `共${todayRanking.rankings.length}人` : '暂无排名'}
+          />
         </div>
+
+        {/* 今日业绩排行榜 */}
+        {todayRanking.rankings.length > 0 && (
+          <GlassCard className="mb-8">
+            <div className="flex items-center gap-2 mb-4 text-cyber-accent">
+              <CheckCircle size={20} />
+              <h2 className="font-mono text-lg">今日业绩排行榜</h2>
+            </div>
+            <div className="space-y-2">
+              {todayRanking.rankings.slice(0, 10).map((rank, index) => {
+                const isMe = rank.staff.id === staff.id;
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                return (
+                  <div 
+                    key={rank.staff.id}
+                    className={`flex items-center justify-between p-3 rounded border transition-all ${
+                      isMe 
+                        ? 'bg-cyber-primary/20 border-cyber-primary shadow-[0_0_10px_rgba(0,243,255,0.3)]' 
+                        : 'bg-black/30 border-gray-700/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 flex items-center justify-center font-mono font-bold ${
+                        index < 3 ? 'text-xl' : 'text-gray-400'
+                      }`}>
+                        {medal || `#${index + 1}`}
+                      </div>
+                      <div>
+                        <div className={`font-mono ${isMe ? 'text-cyber-primary font-bold' : 'text-white'}`}>
+                          {rank.staff.name}
+                          {isMe && <span className="ml-2 text-xs text-cyber-primary">(我)</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-mono text-lg ${
+                        index === 0 ? 'text-yellow-400' : 
+                        index === 1 ? 'text-gray-300' : 
+                        index === 2 ? 'text-orange-400' : 
+                        'text-cyber-accent'
+                      }`}>
+                        {formatChineseNumber(rank.totalAmount)} 万
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ¥{(rank.totalAmount * settings.employeeCostRate / 1000).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {todayRanking.rankings.length > 10 && (
+              <div className="mt-3 text-center text-xs text-gray-500">
+                还有 {todayRanking.rankings.length - 10} 人未显示
+              </div>
+            )}
+          </GlassCard>
+        )}
 
         {/* 我的云机窗口 */}
         <GlassCard className="mb-8">
@@ -1028,12 +1094,6 @@ export const StaffPortal: React.FC<Props> = ({
                           {formatWan(window.goldBalance)}
                           {window.goldBalance < 1000000 && <span className="text-xs">(低)</span>}
                         </div>
-                        <button
-                          onClick={() => handleReleaseMyWindow(window.id)}
-                          className="px-3 py-1 text-xs bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/30 hover:border-yellow-500 rounded transition-all"
-                        >
-                          释放窗口
-                        </button>
                       </div>
                     </div>
                     {getMachineLoginInfo(window.machineId) && (
